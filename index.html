@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/aframe-physics-system@4.0.1/dist/aframe-physics-system.min.js"></script>
-  <script src="https://unpkg.com/aframe-extras@7.2.0/dist/aframe-extras.min.js"></script>
   <style>
     body { margin: 0; overflow: hidden; }
     #resetBtn {
@@ -18,11 +17,11 @@
 <body>
 <button id="resetBtn" onclick="resetScene()">Reset Cans</button>
 
-<a-scene physics="debug: false; gravity: -9.8" background="color: #87CEEB">
+<a-scene physics="debug: false; gravity: -9.8" background="color: #87CEEB" webxr="optionalFeatures: local-floor">
 
-  <a-assets>
-    <img id="skyTexture" src="https://cdn.jsdelivr.net/gh/aframevr/aframe@master/examples/boilerplate/panorama/sechelt.jpg">
-  </a-assets>
+  <!-- Explicit lights so objects are lit in VR too -->
+  <a-entity light="type: ambient; color: #fff; intensity: 0.7"></a-entity>
+  <a-entity light="type: directional; color: #fff; intensity: 0.8" position="-1 4 2"></a-entity>
 
   <!-- Ground -->
   <a-plane position="0 0 -3" rotation="-90 0 0" width="20" height="30"
@@ -42,12 +41,11 @@
   <a-cylinder position="0 0.45 -0.8" radius="0.4" height="0.9" color="#555" static-body></a-cylinder>
   <a-entity id="balls"></a-entity>
 
-  <!-- Sky -->
-  <a-sky src="#skyTexture" rotation="0 -130 0"></a-sky>
+  <a-sky color="#87CEEB" radius="150"></a-sky>
 
   <!-- Camera rig with hand controls -->
-  <a-entity id="rig" position="0 0 0" movement-controls="speed: 0.1">
-    <a-entity camera position="0 1.6 0" look-controls wasd-controls></a-entity>
+  <a-entity id="rig" position="0 0 0">
+    <a-entity camera="far: 200" position="0 1.6 0" look-controls wasd-controls></a-entity>
     <a-entity id="leftHand" hand-controls="hand: left" hand-grabber></a-entity>
     <a-entity id="rightHand" hand-controls="hand: right" hand-grabber></a-entity>
   </a-entity>
