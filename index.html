@@ -37,12 +37,18 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-const BALL_RADIUS = 0.1;
-const GRAB_RANGE = 0.3;
-const TABLE_TOP = 0.8;
+// Real-world sizes (metres / kg): softball, standard 12 oz soda can, carnival counter height.
+const BALL_RADIUS = 0.048;          // 9.6 cm softball
+const BALL_MASS = 0.18;
+const GRAB_RANGE = 0.25;
+const TABLE_TOP = 0.9;
 const PEDESTAL_TOP = 0.9;
-const CAN_R = 0.15, CAN_H = 0.3;
+const CAN_R = 0.033, CAN_H = 0.122; // 6.6 cm x 12.2 cm
+const CAN_MASS = 0.1;               // weighted a little so a softball moves them like a carnival can
+const THROW_ASSIST = 1.6;           // release speed multiplier: a relaxed flick carries a full throw
+const MAX_THROW_SPEED = 18;         // m/s
 
 // ---------- renderer / scene / camera ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -50,15 +56,30 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
 document.body.appendChild(VRButton.createButton(renderer));
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
-scene.add(new THREE.HemisphereLight(0xffffff, 0x4a7c3f, 1.0));
-const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-sun.position.set(-1, 4, 2);
-scene.add(sun);
+scene.background = new THREE.Color(0xbfe3ff);
+scene.fog = new THREE.Fog(0xbfe3ff, 25, 90);
+// reflections for the metal cans (generated in code, no downloads)
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+scene.add(new THREE.HemisphereLight(0xdff1ff, 0x5a7a40, 0.9));
+const sun = new THREE.DirectionalLight(0xfff1d6, 2.2);
+sun.position.set(-3, 6, 2);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4, near: 0.5, far: 20 });
+sun.shadow.bias = -0.0005;
+sun.shadow.normalBias = 0.01;
+sun.target.position.set(0, 0.5, -3);
+scene.add(sun, sun.target);
 
 // The rig moves the player; in VR the headset pose is applied to the camera inside it.
 const rig = new THREE.Group();
@@ -74,41 +95,313 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// ---------- procedural textures (drawn on canvases: nothing to download) ----------
+function canvasTex(w, h, draw, repeat) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
+  return t;
+}
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+const grassTex = canvasTex(512, 512, (g, w, h) => {
+  g.fillStyle = '#4f8a3e'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 9000; i++) {
+    g.strokeStyle = `hsl(${rnd(85, 110)},${rnd(35, 55)}%,${rnd(22, 40)}%)`;
+    const x = rnd(0, w), y = rnd(0, h);
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + rnd(-2, 2), y - rnd(3, 8)); g.stroke();
+  }
+}, [24, 36]);
+
+const woodTex = canvasTex(512, 256, (g, w, h) => {
+  g.fillStyle = '#9a6a38'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 160; i++) {
+    g.strokeStyle = `rgba(${rnd(60, 90)},${rnd(35, 50)},${rnd(15, 25)},${rnd(0.1, 0.35)})`;
+    g.lineWidth = rnd(0.5, 2.5);
+    const y = rnd(0, h);
+    g.beginPath(); g.moveTo(0, y);
+    g.bezierCurveTo(w * 0.3, y + rnd(-6, 6), w * 0.6, y + rnd(-6, 6), w, y + rnd(-4, 4));
+    g.stroke();
+  }
+});
+
+function stripeTex(c1, c2, n, repeat) {
+  return canvasTex(256, 64, (g, w, h) => {
+    for (let i = 0; i < n; i++) { g.fillStyle = i % 2 ? c2 : c1; g.fillRect(i * w / n, 0, w / n + 1, h); }
+  }, repeat);
+}
+
+function canTex(base, accent, name) {
+  return canvasTex(512, 256, (g, w, h) => {
+    g.fillStyle = base; g.fillRect(0, 0, w, h);
+    g.fillStyle = accent; g.fillRect(0, h * 0.38, w, h * 0.24);
+    g.fillStyle = '#d9dde0'; g.fillRect(0, 0, w, h * 0.1); g.fillRect(0, h * 0.9, w, h * 0.1);
+    g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(w * 0.08, 0, w * 0.04, h); // highlight
+    g.fillStyle = base === '#c0392b' ? '#fff' : '#1b2a6b';
+    g.font = 'bold 54px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (const u of [0.25, 0.75]) g.fillText(name, w * u, h * 0.5);
+  });
+}
+
+const ballTex = canvasTex(512, 256, (g, w, h) => {
+  g.fillStyle = '#d6e64a'; g.fillRect(0, 0, w, h);
+  g.strokeStyle = '#c0392b'; g.lineWidth = 3;
+  for (const ph of [0, Math.PI]) {
+    g.beginPath();
+    for (let x = 0; x <= w; x += 4) {
+      const y = h / 2 + h * 0.28 * Math.sin((x / w) * Math.PI * 2 + ph);
+      x ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.stroke();
+    g.lineWidth = 1.5;
+    for (let x = 0; x <= w; x += 9) { // stitches
+      const y = h / 2 + h * 0.28 * Math.sin((x / w) * Math.PI * 2 + ph);
+      g.beginPath(); g.moveTo(x, y - 6); g.lineTo(x + 3, y + 6); g.stroke();
+    }
+    g.lineWidth = 3;
+  }
+});
+
+const signTex = (text, bg, fg, w = 512, h = 128) => canvasTex(w, h, (g) => {
+  g.fillStyle = bg; g.fillRect(0, 0, w, h);
+  g.strokeStyle = fg; g.lineWidth = 6; g.strokeRect(6, 6, w - 12, h - 12);
+  g.fillStyle = fg; g.font = `bold ${h * 0.55}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(text, w / 2, h / 2 + 4);
+});
+
+const std = (opts) => new THREE.MeshStandardMaterial({ envMapIntensity: 0.35, ...opts });
+
+// sky dome with a gradient (a background texture would be screen-locked in VR)
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(150, 24, 16),
+  new THREE.MeshBasicMaterial({
+    side: THREE.BackSide, fog: false,
+    map: canvasTex(8, 256, (g, w, h) => {
+      const gr = g.createLinearGradient(0, 0, 0, h);
+      gr.addColorStop(0, '#2f6fc4'); gr.addColorStop(0.5, '#8fc3f0'); gr.addColorStop(1, '#dcefff');
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    }),
+  }));
+scene.add(sky);
+
 // ---------- physics ----------
 const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.8, 0) });
 world.solver.iterations = 20;
-world.defaultContactMaterial.friction = 0.6;
-world.defaultContactMaterial.restitution = 0.05;
+
+// Materials: tin cans, a softball, painted wood and grass behave differently.
+const M = {
+  ball: new CANNON.Material('ball'), can: new CANNON.Material('can'),
+  wood: new CANNON.Material('wood'), grass: new CANNON.Material('grass'),
+};
+const contact = (a, b, friction, restitution) =>
+  world.addContactMaterial(new CANNON.ContactMaterial(a, b, { friction, restitution }));
+contact(M.ball, M.can, 0.3, 0.35);
+contact(M.can, M.can, 0.4, 0.2);
+contact(M.ball, M.wood, 0.4, 0.45);
+contact(M.can, M.wood, 0.5, 0.15);
+contact(M.ball, M.grass, 0.7, 0.3);
+contact(M.can, M.grass, 0.6, 0.12);
+contact(M.ball, M.ball, 0.3, 0.4);
+world.defaultContactMaterial.friction = 0.5;
+world.defaultContactMaterial.restitution = 0.1;
 
 const dynamics = []; // { mesh, body }
 
-function addStaticBox(w, h, d, x, y, z, color) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color }));
+// ---------- audio (synthesised with WebAudio; no sound files) ----------
+const audio = { ctx: null, master: null, noise: null, log: [], recent: [] };
+
+function ensureAudio() {
+  if (audio.ctx) return audio.ctx;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  const ctx = audio.ctx = new AC();
+  const comp = ctx.createDynamicsCompressor();
+  audio.master = ctx.createGain();
+  audio.master.gain.value = 0.9;
+  audio.master.connect(comp).connect(ctx.destination);
+  audio.noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+  const d = audio.noise.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return ctx;
+}
+function unlockAudio() { const c = ensureAudio(); if (c && c.state !== 'running') c.resume().catch(() => {}); }
+for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.addEventListener(ev, unlockAudio);
+renderer.xr.addEventListener('sessionstart', unlockAudio);
+
+function tone(out, freq, t0, dur, gain, type = 'sine') {
+  const ctx = audio.ctx, o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(gain, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g).connect(out);
+  o.start(t0); o.stop(t0 + dur + 0.02);
+}
+function noiseBurst(out, t0, dur, gain, freq, q = 1, type = 'bandpass', sweepTo) {
+  const ctx = audio.ctx, s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+  s.buffer = audio.noise;
+  f.type = type; f.frequency.setValueAtTime(freq, t0); f.Q.value = q;
+  if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, t0 + dur);
+  g.gain.setValueAtTime(gain, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  s.connect(f).connect(g).connect(out);
+  s.start(t0, Math.random() * 0.5, dur + 0.05);
+}
+
+const SOUNDS = {
+  tin(out, t, v) { // metal can clink
+    const f = rnd(1700, 2600);
+    tone(out, f, t, 0.18, 0.25 * v); tone(out, f * 2.76, t, 0.1, 0.12 * v); tone(out, f * 5.4, t, 0.05, 0.05 * v);
+    noiseBurst(out, t, 0.04, 0.35 * v, 4500, 0.8);
+  },
+  thud(out, t, v) { // ball / can on wood or grass
+    tone(out, rnd(80, 130), t, 0.14, 0.7 * v);
+    noiseBurst(out, t, 0.07, 0.4 * v, 700, 0.7, 'lowpass');
+  },
+  hit(out, t, v) { SOUNDS.tin(out, t, v); SOUNDS.thud(out, t, v * 0.6); }, // ball on can
+  canfloor(out, t, v) { SOUNDS.tin(out, t, v * 0.7); SOUNDS.thud(out, t, v * 0.5); },
+  whoosh(out, t, v) { noiseBurst(out, t, 0.35, 0.5 * v, 350, 1.5, 'bandpass', 1800); },
+  grab(out, t, v) { tone(out, 520, t, 0.05, 0.15, 'triangle'); noiseBurst(out, t, 0.03, 0.1, 2000); },
+  win(out, t) { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(out, f, t + i * 0.11, 0.5, 0.22, 'triangle')); },
+};
+const _lp = new THREE.Vector3();
+function play(type, pos, strength = 1) {
+  audio.log.push({ type, strength });
+  if (audio.log.length > 500) audio.log.shift();
+  const ctx = audio.ctx;
+  if (!ctx || ctx.state !== 'running') return;
+  const now = performance.now();
+  audio.recent = audio.recent.filter(t => now - t < 100);
+  if (audio.recent.length > 10) return; // keep a pile-up of cans from clipping
+  audio.recent.push(now);
+  let out = audio.master;
+  if (pos) {
+    const p = ctx.createPanner();
+    p.panningModel = 'HRTF'; p.distanceModel = 'inverse'; p.refDistance = 1.5; p.rolloffFactor = 0.7;
+    if (p.positionX) { p.positionX.value = pos.x; p.positionY.value = pos.y; p.positionZ.value = pos.z; }
+    p.connect(audio.master);
+    out = p;
+  }
+  SOUNDS[type](out, ctx.currentTime, Math.max(0.06, Math.min(1, strength)));
+}
+function updateListener() {
+  const ctx = audio.ctx;
+  if (!ctx || !ctx.listener.positionX) return;
+  const L = ctx.listener, q = camera.getWorldQuaternion(new THREE.Quaternion());
+  const p = camera.getWorldPosition(_lp);
+  const f = new THREE.Vector3(0, 0, -1).applyQuaternion(q), u = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+  L.positionX.value = p.x; L.positionY.value = p.y; L.positionZ.value = p.z;
+  L.forwardX.value = f.x; L.forwardY.value = f.y; L.forwardZ.value = f.z;
+  L.upX.value = u.x; L.upY.value = u.y; L.upZ.value = u.z;
+}
+
+// collisions -> sounds (each pair is handled once, by the body with the higher id)
+function onCollide(self) {
+  return (e) => {
+    const o = e.body;
+    if (o.mass > 0 && o.id < self.id) return;
+    const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
+    if (v < 0.35) return;
+    const k = [self.kind, o.kind];
+    const has = (x) => k.includes(x);
+    let type;
+    if (has('can') && has('ball')) type = 'hit';
+    else if (k[0] === 'can' && k[1] === 'can') type = 'tin';
+    else if (has('can')) type = 'canfloor';
+    else type = 'thud';
+    play(type, self.position, v / 6);
+  };
+}
+
+// ---------- the booth ----------
+function addStaticBox(w, h, d, x, y, z, materials, kind = 'wood') {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), materials);
   mesh.position.set(x, y, z);
+  mesh.castShadow = mesh.receiveShadow = true;
   scene.add(mesh);
-  const body = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(w / 2, h / 2, d / 2)) });
+  const body = new CANNON.Body({ mass: 0, material: M.wood, shape: new CANNON.Box(new CANNON.Vec3(w / 2, h / 2, d / 2)) });
+  body.kind = kind;
   body.position.set(x, y, z);
   world.addBody(body);
   return { mesh, body };
 }
 
 // ground (visual + infinite plane collider)
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 60), new THREE.MeshStandardMaterial({ color: 0x4a7c3f }));
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 90), std({ map: grassTex, roughness: 1, envMapIntensity: 0.15 }));
 ground.rotation.x = -Math.PI / 2;
-ground.position.set(0, 0, -3);
+ground.position.set(0, 0, -20);
+ground.receiveShadow = true;
 scene.add(ground);
-const groundBody = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
+const groundBody = new CANNON.Body({ mass: 0, material: M.grass, shape: new CANNON.Plane() });
+groundBody.kind = 'ground';
 groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
 world.addBody(groundBody);
 
-// target table (top at y = 0.8) and ball pedestal (top at y = 0.9)
-addStaticBox(2.2, TABLE_TOP, 0.9, 0, TABLE_TOP / 2, -4, 0x8b5a2b);
-addStaticBox(1.0, PEDESTAL_TOP, 0.5, 0, PEDESTAL_TOP / 2, -0.8, 0x555555);
+// counter: wood top, red/white striped front and sides
+const stripes = std({ map: stripeTex('#c0392b', '#f4efe6', 8, [1, 1]), roughness: 0.7 });
+const woodTop = std({ map: woodTex, roughness: 0.6 });
+addStaticBox(1.2, TABLE_TOP, 0.6, 0, TABLE_TOP / 2, -4, [stripes, stripes, woodTop, stripes, stripes, stripes]);
+// ball stand
+const darkWood = std({ map: woodTex, color: 0x6f4a28, roughness: 0.7 });
+addStaticBox(0.8, PEDESTAL_TOP, 0.4, 0, PEDESTAL_TOP / 2, -0.8, [darkWood, darkWood, woodTop, darkWood, darkWood, darkWood]);
+
+// back and side walls, striped awning, sign, bulbs
+const wallMat = (rep) => std({ map: stripeTex('#2e86c1', '#f4efe6', 10, rep), roughness: 0.9, side: THREE.DoubleSide });
+function plane(w, h, mat, x, y, z, rx = 0, ry = 0) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+  m.position.set(x, y, z); m.rotation.set(rx, ry, 0);
+  m.receiveShadow = true; m.castShadow = true;
+  scene.add(m);
+  return m;
+}
+plane(5.4, 3.2, wallMat([1, 1]), 0, 1.6, -5.2);
+plane(2.2, 3.2, wallMat([0.5, 1]), -2.7, 1.6, -4.1, 0, Math.PI / 2);
+plane(2.2, 3.2, wallMat([0.5, 1]), 2.7, 1.6, -4.1, 0, Math.PI / 2);
+const awning = plane(5.6, 2.3, std({ map: stripeTex('#c0392b', '#f4efe6', 14, [1, 1]), side: THREE.DoubleSide, roughness: 0.8 }),
+  0, 2.85, -4.1, -Math.PI / 2 + 0.28);
+plane(2.4, 0.6, std({ map: signTex('CAN TOSS', '#c0392b', '#ffe9a8'), roughness: 0.6 }), 0, 2.55, -5.18);
+
+const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8 });
+const bulbGeo = new THREE.SphereGeometry(0.04, 12, 8);
+for (let i = 0; i < 13; i++) {
+  const b = new THREE.Mesh(bulbGeo, bulbMat);
+  b.position.set(-2.4 + i * 0.4, 2.52, -3.0);
+  scene.add(b);
+}
+const warm = new THREE.PointLight(0xffd9a0, 6, 6, 2);
+warm.position.set(0, 2.3, -3.6);
+scene.add(warm);
+
+// scoreboard
+const boardCanvas = document.createElement('canvas');
+boardCanvas.width = 512; boardCanvas.height = 160;
+const boardTex = new THREE.CanvasTexture(boardCanvas);
+boardTex.colorSpace = THREE.SRGBColorSpace;
+plane(1.1, 0.34, new THREE.MeshBasicMaterial({ map: boardTex }), 0, 1.85, -5.17);
+const score = { down: 0, throws: 0, won: false };
+let lastScoreKey = '';
+function drawBoard() {
+  const key = `${score.down}/${score.throws}/${score.won}`;
+  if (key === lastScoreKey) return;
+  lastScoreKey = key;
+  const g = boardCanvas.getContext('2d');
+  g.fillStyle = '#111'; g.fillRect(0, 0, 512, 160);
+  g.strokeStyle = '#ffe9a8'; g.lineWidth = 6; g.strokeRect(6, 6, 500, 148);
+  g.fillStyle = '#ffe9a8'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = 'bold 54px sans-serif';
+  g.fillText(score.won ? 'YOU WIN!' : `CANS DOWN ${score.down}/10`, 256, 62);
+  g.font = '34px sans-serif';
+  g.fillText(`THROWS: ${score.throws}`, 256, 118);
+  boardTex.needsUpdate = true;
+}
 
 // throwing line marker
-const ring = new THREE.Mesh(new THREE.RingGeometry(0.4, 0.5, 32), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+const ring = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.45, 32), new THREE.MeshBasicMaterial({ color: 0xffffff }));
 ring.rotation.x = -Math.PI / 2;
-ring.position.set(0, 0.01, -1.6);
+ring.position.set(0, 0.01, 0); // where you stand
 scene.add(ring);
 
 // ---------- cans and balls ----------
@@ -116,6 +409,7 @@ const cans = [];
 const balls = [];
 
 function track(mesh, body, list) {
+  mesh.castShadow = mesh.receiveShadow = true;
   scene.add(mesh);
   world.addBody(body);
   const item = { mesh, body, heldBy: null };
@@ -123,49 +417,54 @@ function track(mesh, body, list) {
   list.push(item);
   return item;
 }
-
-function removeItem(item, list) {
+function removeItem(item, list) { // geometry and materials are shared, so only unregister
   scene.remove(item.mesh);
-  item.mesh.geometry.dispose();
-  item.mesh.material.dispose();
   world.removeBody(item.body);
   dynamics.splice(dynamics.indexOf(item), 1);
   list.splice(list.indexOf(item), 1);
 }
 
+const canGeo = new THREE.CylinderGeometry(CAN_R, CAN_R, CAN_H, 32);
+const capMat = std({ color: 0xd5d9dc, metalness: 0.9, roughness: 0.28, envMapIntensity: 1 });
+const canMats = [
+  [std({ map: canTex('#c0392b', '#f4efe6', 'COLA'), metalness: 0.75, roughness: 0.3, envMapIntensity: 1 }), capMat, capMat],
+  [std({ map: canTex('#c8ccd0', '#2e86c1', 'SODA'), metalness: 0.85, roughness: 0.28, envMapIntensity: 1 }), capMat, capMat],
+];
 function makeCan(x, y, z, i) {
-  const mesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(CAN_R, CAN_R, CAN_H, 24),
-    new THREE.MeshStandardMaterial({ color: i % 2 === 0 ? 0xc0392b : 0xbdc3c7 }));
+  const mesh = new THREE.Mesh(canGeo, canMats[i % 2]);
   // Box collider slightly inside the visual cylinder: cannon's cylinder contacts jitter,
   // which makes stacked cans creep and topple on their own.
   const he = CAN_R * 0.97;
   const body = new CANNON.Body({
-    mass: 0.3, linearDamping: 0.1, angularDamping: 0.3,
+    mass: CAN_MASS, material: M.can, linearDamping: 0.1, angularDamping: 0.3,
     shape: new CANNON.Box(new CANNON.Vec3(he, CAN_H / 2, he)),
   });
+  body.kind = 'can';
   body.position.set(x, y, z);
+  body.addEventListener('collide', onCollide(body));
   return track(mesh, body, cans);
 }
 
+const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 32, 20);
+const ballMat = std({ map: ballTex, roughness: 0.75, envMapIntensity: 0.25 });
 function makeBall(x, y, z) {
-  const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(BALL_RADIUS, 24, 16),
-    new THREE.MeshStandardMaterial({ color: 0xf1c34e }));
+  const mesh = new THREE.Mesh(ballGeo, ballMat);
   const body = new CANNON.Body({
-    mass: 0.3, linearDamping: 0.05, angularDamping: 0.2,
+    mass: BALL_MASS, material: M.ball, linearDamping: 0.01, angularDamping: 0.15,
     shape: new CANNON.Sphere(BALL_RADIUS),
   });
+  body.kind = 'ball';
   body.position.set(x, y, z);
+  body.addEventListener('collide', onCollide(body));
   const item = track(mesh, body, balls);
   item.home = [x, y, z];
   return item;
 }
 
-// Pyramid of 6 / 3 / 1 cans sitting on the table
+// Pyramid of 6 / 3 / 1 cans sitting on the counter
 function buildTower() {
   while (cans.length) removeItem(cans[0], cans);
-  const s = CAN_R * 2 + 0.03, gap = 0.002;
+  const s = CAN_R * 2 + 0.008, gap = 0.001;
   const y0 = TABLE_TOP + CAN_H / 2 + gap;
   let id = 0;
   for (let i = 0; i < 6; i++) makeCan((i - 2.5) * s, y0, -4, id++);
@@ -178,31 +477,49 @@ function spawnBalls() {
     if (balls[0].heldBy) balls[0].heldBy.held = null;
     removeItem(balls[0], balls);
   }
-  for (let i = 0; i < 4; i++) makeBall(i * 0.2 - 0.3, PEDESTAL_TOP + BALL_RADIUS + 0.02, -0.8);
+  for (let i = 0; i < 4; i++) makeBall((i - 1.5) * 0.15, PEDESTAL_TOP + BALL_RADIUS + 0.01, -0.8);
 }
 
 function resetScene() {
   buildTower();
   spawnBalls();
+  score.down = 0; score.throws = 0; score.won = false;
+  drawBoard();
 }
 document.getElementById('resetBtn').addEventListener('click', resetScene);
+
+function updateScore() {
+  let down = 0;
+  for (const c of cans) {
+    const q = c.body.quaternion;
+    const upY = 1 - 2 * (q.x * q.x + q.z * q.z); // how upright the can is
+    if (c.body.position.y < TABLE_TOP - 0.03 || upY < 0.5) down++;
+  }
+  score.down = down;
+  if (down === cans.length && cans.length > 0 && !score.won) {
+    score.won = true;
+    play('win', null, 1);
+  }
+  drawBoard();
+}
 
 // ---------- VR hands: grab with trigger or grip, throw on release ----------
 const hands = [];
 const tmp = new THREE.Vector3();
 const controllerModels = new XRControllerModelFactory();
+let simTime = 0;
 
 for (let i = 0; i < 2; i++) {
   const ctrl = renderer.xr.getController(i);
-  const hand = { ctrl, held: null, prev: new THREE.Vector3(), vel: new THREE.Vector3(), hasPrev: false };
+  const hand = { ctrl, held: null, prev: new THREE.Vector3(), vel: new THREE.Vector3(), hasPrev: false, hist: [] };
   // visible "hand" marker so there is always something to see even if the model fails to load
-  ctrl.add(new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 12), new THREE.MeshStandardMaterial({ color: 0xffffff })));
+  ctrl.add(new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 12), std({ color: 0xffffff, roughness: 0.5 })));
   rig.add(ctrl);
   const grip = renderer.xr.getControllerGrip(i);
   grip.add(controllerModels.createControllerModel(grip));
   rig.add(grip);
   for (const [down, up] of [['selectstart', 'selectend'], ['squeezestart', 'squeezeend']]) {
-    ctrl.addEventListener(down, () => grab(hand));
+    ctrl.addEventListener(down, () => { unlockAudio(); grab(hand); });
     ctrl.addEventListener(up, () => release(hand));
   }
   hands.push(hand);
@@ -217,7 +534,18 @@ function grab(hand) {
     const d = tmp.distanceTo(b.mesh.position);
     if (d < bestD) { best = b; bestD = d; }
   }
-  if (best) { hand.held = best; best.heldBy = hand; }
+  if (best) { hand.held = best; best.heldBy = hand; play('grab', best.mesh.position, 0.6); }
+}
+
+// Hand velocity over the last ~100 ms (falls back to the last two samples at low frame rates).
+function handVelocity(hand, out) {
+  const h = hand.hist;
+  if (h.length < 2) return out.set(0, 0, 0);
+  const last = h[h.length - 1];
+  let first = h[h.length - 2];
+  for (let i = h.length - 2; i >= 0 && last.t - h[i].t <= 0.1; i--) first = h[i];
+  const dt = last.t - first.t;
+  return dt > 0 ? out.copy(last.p).sub(first.p).multiplyScalar(1 / dt) : out.set(0, 0, 0);
 }
 
 function release(hand) {
@@ -225,16 +553,23 @@ function release(hand) {
   if (!b) return;
   hand.held = null;
   b.heldBy = null;
-  b.body.velocity.set(hand.vel.x, hand.vel.y, hand.vel.z);
+  const v = handVelocity(hand, new THREE.Vector3()).multiplyScalar(THROW_ASSIST);
+  if (v.length() > MAX_THROW_SPEED) v.setLength(MAX_THROW_SPEED);
+  b.body.velocity.set(v.x, v.y, v.z);
   b.body.wakeUp();
+  if (v.length() > 1.5) {
+    score.throws++;
+    play('whoosh', b.mesh.position, v.length() / 12);
+  }
 }
 
 function updateHands(dt) {
+  simTime += dt;
   for (const h of hands) {
     h.ctrl.getWorldPosition(tmp);
-    if (h.hasPrev && dt > 0) h.vel.lerp(tmp.clone().sub(h.prev).multiplyScalar(1 / dt), 0.5);
-    h.prev.copy(tmp);
-    h.hasPrev = true;
+    h.hist.push({ t: simTime, p: tmp.clone() });
+    while (h.hist.length > 12 || (h.hist.length > 2 && simTime - h.hist[0].t > 0.3)) h.hist.shift();
+    handVelocity(h, h.vel);
     if (h.held) {
       h.held.body.position.set(tmp.x, tmp.y, tmp.z);
       h.held.body.velocity.set(0, 0, 0);
@@ -277,12 +612,14 @@ window.addEventListener('mouseup', () => {
   dragging = false;
 });
 
-function throwBall(speed = 9) {
+function throwBall(speed = 8) {
   const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
   const p = camera.getWorldPosition(new THREE.Vector3()).addScaledVector(dir, 0.4);
   const ball = makeBall(p.x, p.y, p.z);
   ball.thrown = true;
   ball.body.velocity.set(dir.x * speed, dir.y * speed + 1.5, dir.z * speed);
+  score.throws++;
+  play('whoosh', p, 0.6);
   const thrown = balls.filter(b => b.thrown);
   if (thrown.length > 10) removeItem(thrown[0], balls);
   return ball;
@@ -305,7 +642,8 @@ renderer.setAnimationLoop(() => {
   moveDesktop(dt);
   pollVRButtons();
   updateHands(dt);
-  world.step(1 / 60, dt, 3);
+  // small fixed step: a 9.6 cm ball at ~10 m/s must not tunnel through 6.6 cm cans
+  world.step(1 / 240, dt, 12);
   for (const { mesh, body } of dynamics) {
     mesh.position.copy(body.position);
     mesh.quaternion.copy(body.quaternion);
@@ -319,13 +657,15 @@ renderer.setAnimationLoop(() => {
       b.body.angularVelocity.set(0, 0, 0);
     }
   }
+  updateScore();
+  updateListener();
   renderer.render(scene, camera);
 });
 
 resetScene();
 
 // handle for tests / debugging
-window.game = { THREE, scene, camera, rig, renderer, world, cans, balls, hands, resetScene, throwBall, grab, release };
+window.game = { THREE, scene, camera, rig, renderer, world, cans, balls, hands, score, audio, play, resetScene, throwBall, grab, release };
 </script>
 </body>
 </html>

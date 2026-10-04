@@ -42,3 +42,23 @@ test('WebXR is wired up: xr enabled, VRButton, local-floor, two controllers, lig
   assert.match(moduleSrc, /HemisphereLight|AmbientLight/);
   assert.match(moduleSrc, /setAnimationLoop/);
 });
+
+test('object sizes are realistic (soda can 6.6x12.2 cm, softball ~9.6 cm, counter ~0.9 m)', () => {
+  const num = n => +moduleSrc.match(new RegExp(`(?:const|,) ${n}\\s*=\\s*([0-9.]+)`))[1];
+  assert.ok(Math.abs(num('CAN_R') * 2 - 0.066) < 0.005);
+  assert.ok(Math.abs(num('CAN_H') - 0.122) < 0.01);
+  assert.ok(Math.abs(num('BALL_RADIUS') * 2 - 0.096) < 0.02);
+  assert.ok(num('TABLE_TOP') >= 0.8 && num('TABLE_TOP') <= 1.1);
+});
+
+test('audio is synthesised in code (no sound files to fail loading)', () => {
+  assert.doesNotMatch(moduleSrc, /\.(mp3|ogg|wav)|AudioLoader|fetch\(/);
+  assert.match(moduleSrc, /AudioContext/);
+  assert.match(moduleSrc, /unlockAudio/);
+});
+
+test('visuals: shadows, tone mapping and environment lighting are enabled', () => {
+  assert.match(moduleSrc, /shadowMap\.enabled\s*=\s*true/);
+  assert.match(moduleSrc, /toneMapping/);
+  assert.match(moduleSrc, /scene\.environment/);
+});
