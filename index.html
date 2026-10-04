@@ -7,9 +7,9 @@
   <style>
     body { margin: 0; overflow: hidden; background: #87CEEB; }
     canvas { display: block; }
-    #resetBtn {
-      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-      z-index: 999; padding: 12px 24px; font-size: 18px; font-family: sans-serif;
+    #bar { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 999; display: flex; gap: 10px; }
+    #bar button {
+      padding: 12px 24px; font-size: 18px; font-family: sans-serif;
       background: #222; color: white; border: none; border-radius: 8px; cursor: pointer;
     }
     #help {
@@ -28,9 +28,9 @@
   </script>
 </head>
 <body>
-<button id="resetBtn">Reset Cans</button>
-<div id="help">VR: trigger or grip near a ball to pick it up, release to throw &middot; A/B button resets.<br>
-Desktop: click to throw, drag to look, WASD to move.</div>
+<div id="bar"><button id="resetBtn">Reset Cans</button><button id="refillBtn">Refill Balls</button></div>
+<div id="help">VR: trigger/grip near a ball to pick it up, release to throw &middot; A reset cans &middot; B (hold) quit VR &middot; X hints &middot; Y refill balls<br>
+Desktop: click to throw, drag to look, WASD to move, R reset cans.</div>
 
 <script type="module">
 import * as THREE from 'three';
@@ -191,6 +191,7 @@ scene.add(sky);
 // ---------- physics ----------
 const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.8, 0) });
 world.solver.iterations = 20;
+world.allowSleep = true; // untouched cans sleep, so the pyramid stays exactly as built until hit
 
 // Materials: tin cans, a softball, painted wood and grass behave differently.
 const M = {
@@ -210,6 +211,8 @@ world.defaultContactMaterial.friction = 0.5;
 world.defaultContactMaterial.restitution = 0.1;
 
 const dynamics = []; // { mesh, body }
+const hands = [];
+let simTime = 0;
 
 // ---------- audio (synthesised with WebAudio; no sound files) ----------
 const audio = { ctx: null, master: null, noise: null, log: [], recent: [] };
@@ -251,25 +254,36 @@ function noiseBurst(out, t0, dur, gain, freq, q = 1, type = 'bandpass', sweepTo)
   s.start(t0, Math.random() * 0.5, dur + 0.05);
 }
 
+// A thin aluminium shell rings with inharmonic partials that die quickly; each can has its own pitch.
+const CAN_PARTIALS = [[1, 0.30, 0.30], [2.32, 0.22, 0.18], [4.25, 0.14, 0.11], [6.63, 0.08, 0.06]]; // ratio, gain, decay s
 const SOUNDS = {
-  tin(out, t, v) { // metal can clink
-    const f = rnd(1700, 2600);
-    tone(out, f, t, 0.18, 0.25 * v); tone(out, f * 2.76, t, 0.1, 0.12 * v); tone(out, f * 5.4, t, 0.05, 0.05 * v);
-    noiseBurst(out, t, 0.04, 0.35 * v, 4500, 0.8);
+  tin(out, t, v, pitch = rnd(1300, 1900)) { // metal can clink
+    for (const [ratio, g, decay] of CAN_PARTIALS) tone(out, pitch * ratio, t, decay, g * v);
+    tone(out, pitch * 0.5, t, 0.05, 0.18 * v, 'triangle');   // body "tonk"
+    noiseBurst(out, t, 0.02, 0.55 * v, 5500, 1.2);            // metallic click
+    noiseBurst(out, t, 0.06, 0.25 * v, 2800, 0.8);
   },
-  thud(out, t, v) { // ball / can on wood or grass
-    tone(out, rnd(80, 130), t, 0.14, 0.7 * v);
-    noiseBurst(out, t, 0.07, 0.4 * v, 700, 0.7, 'lowpass');
+  thud(out, t, v) { // ball on wood / grass
+    tone(out, rnd(90, 130), t, 0.12, 0.55 * v);
+    noiseBurst(out, t, 0.06, 0.35 * v, 700, 0.7, 'lowpass');
   },
-  hit(out, t, v) { SOUNDS.tin(out, t, v); SOUNDS.thud(out, t, v * 0.6); }, // ball on can
-  canfloor(out, t, v) { SOUNDS.tin(out, t, v * 0.7); SOUNDS.thud(out, t, v * 0.5); },
+  hit(out, t, v, pitch) { // softball hits a can: dull thump + ring
+    SOUNDS.tin(out, t, v, pitch);
+    tone(out, 170, t, 0.07, 0.35 * v);
+    noiseBurst(out, t, 0.04, 0.3 * v, 900, 0.7, 'lowpass');
+  },
+  canfloor(out, t, v, pitch) { // can lands on wood / grass: short clank, mostly damped
+    SOUNDS.tin(out, t, v * 0.55, (pitch || 1500) * 0.85);
+    noiseBurst(out, t, 0.05, 0.3 * v, 1200, 0.7, 'lowpass');
+  },
   whoosh(out, t, v) { noiseBurst(out, t, 0.35, 0.5 * v, 350, 1.5, 'bandpass', 1800); },
   grab(out, t, v) { tone(out, 520, t, 0.05, 0.15, 'triangle'); noiseBurst(out, t, 0.03, 0.1, 2000); },
+  click(out, t, v) { tone(out, 880, t, 0.04, 0.12, 'triangle'); },
   win(out, t) { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(out, f, t + i * 0.11, 0.5, 0.22, 'triangle')); },
 };
 const _lp = new THREE.Vector3();
-function play(type, pos, strength = 1) {
-  audio.log.push({ type, strength });
+function play(type, pos, strength = 1, pitch) {
+  audio.log.push({ type, strength, pitch });
   if (audio.log.length > 500) audio.log.shift();
   const ctx = audio.ctx;
   if (!ctx || ctx.state !== 'running') return;
@@ -285,7 +299,7 @@ function play(type, pos, strength = 1) {
     p.connect(audio.master);
     out = p;
   }
-  SOUNDS[type](out, ctx.currentTime, Math.max(0.06, Math.min(1, strength)));
+  SOUNDS[type](out, ctx.currentTime, Math.max(0.06, Math.min(1, strength)), pitch);
 }
 function updateListener() {
   const ctx = audio.ctx;
@@ -307,12 +321,17 @@ function onCollide(self) {
     if (v < 0.35) return;
     const k = [self.kind, o.kind];
     const has = (x) => k.includes(x);
-    let type;
-    if (has('can') && has('ball')) type = 'hit';
-    else if (k[0] === 'can' && k[1] === 'can') type = 'tin';
-    else if (has('can')) type = 'canfloor';
-    else type = 'thud';
-    play(type, self.position, v / 6);
+    const vol = v / 6;
+    if (has('can') && has('ball')) {
+      play('hit', self.position, vol, self.kind === 'can' ? self.pitch : o.pitch);
+    } else if (k[0] === 'can' && k[1] === 'can') {
+      play('tin', self.position, vol, self.pitch);
+      play('tin', o.position, vol * 0.8, o.pitch);
+    } else if (has('can')) {
+      play('canfloor', self.position, vol, self.pitch);
+    } else {
+      play('thud', self.position, vol);
+    }
   };
 }
 
@@ -418,6 +437,10 @@ function track(mesh, body, list) {
   return item;
 }
 function removeItem(item, list) { // geometry and materials are shared, so only unregister
+  if (list === balls && item.slot !== null) { // a slot ball left the world: refill its slot
+    const i = item.slot; item.slot = null; slots[i] = null;
+    refillQueue.push({ slot: i, at: simTime + 0.7 });
+  }
   scene.remove(item.mesh);
   world.removeBody(item.body);
   dynamics.splice(dynamics.indexOf(item), 1);
@@ -440,6 +463,8 @@ function makeCan(x, y, z, i) {
     shape: new CANNON.Box(new CANNON.Vec3(he, CAN_H / 2, he)),
   });
   body.kind = 'can';
+  body.pitch = rnd(1200, 1900);
+  body.allowSleep = true; body.sleepSpeedLimit = 0.08; body.sleepTimeLimit = 0.4;
   body.position.set(x, y, z);
   body.addEventListener('collide', onCollide(body));
   return track(mesh, body, cans);
@@ -450,43 +475,80 @@ const ballMat = std({ map: ballTex, roughness: 0.75, envMapIntensity: 0.25 });
 function makeBall(x, y, z) {
   const mesh = new THREE.Mesh(ballGeo, ballMat);
   const body = new CANNON.Body({
-    mass: BALL_MASS, material: M.ball, linearDamping: 0.01, angularDamping: 0.15,
+    mass: BALL_MASS, material: M.ball, linearDamping: 0.01, angularDamping: 0.15, allowSleep: false,
     shape: new CANNON.Sphere(BALL_RADIUS),
   });
   body.kind = 'ball';
   body.position.set(x, y, z);
   body.addEventListener('collide', onCollide(body));
   const item = track(mesh, body, balls);
-  item.home = [x, y, z];
+  item.slot = null;
   return item;
 }
 
-// Pyramid of 6 / 3 / 1 cans sitting on the counter
+// Four slots on the stand. Taking a ball leaves its slot empty and a fresh ball appears there shortly after.
+const SLOT_POS = [0, 1, 2, 3].map(i => [(i - 1.5) * 0.15, PEDESTAL_TOP + BALL_RADIUS + 0.01, -0.8]);
+const slots = [null, null, null, null];
+const refillQueue = []; // { slot, at }
+const MAX_LOOSE_BALLS = 10;
+
+function fillSlot(i) {
+  const b = makeBall(...SLOT_POS[i]);
+  b.slot = i; slots[i] = b;
+  return b;
+}
+function freeSlotOf(ball) {
+  if (ball.slot === null) return;
+  const i = ball.slot;
+  ball.slot = null; slots[i] = null;
+  refillQueue.push({ slot: i, at: simTime + 0.7 });
+}
+function updateRefills() {
+  for (let k = refillQueue.length - 1; k >= 0; k--) {
+    const q = refillQueue[k];
+    if (slots[q.slot]) { refillQueue.splice(k, 1); continue; }
+    if (simTime < q.at) continue;
+    const [x, y, z] = SLOT_POS[q.slot];
+    const blocked = balls.some(b => Math.hypot(b.mesh.position.x - x, b.mesh.position.y - y, b.mesh.position.z - z) < BALL_RADIUS * 1.6);
+    if (blocked) continue; // a ball (or a hand) is still in the way; try again next frame
+    refillQueue.splice(k, 1);
+    fillSlot(q.slot);
+  }
+  // keep memory bounded: drop the oldest loose balls
+  const loose = balls.filter(b => b.slot === null && !b.heldBy);
+  if (loose.length > MAX_LOOSE_BALLS) removeItem(loose[0], balls);
+}
+
+// Triangle pyramid of 10 cans (4-3-2-1): every can sits centred on the two below it.
 function buildTower() {
   while (cans.length) removeItem(cans[0], cans);
-  const s = CAN_R * 2 + 0.008, gap = 0.001;
+  const s = CAN_R * 2 + 0.006, gap = 0.001;
   const y0 = TABLE_TOP + CAN_H / 2 + gap;
   let id = 0;
-  for (let i = 0; i < 6; i++) makeCan((i - 2.5) * s, y0, -4, id++);
-  for (let i = 0; i < 3; i++) makeCan((i - 1) * 2 * s, y0 + CAN_H + gap, -4, id++);
-  makeCan(0, y0 + 2 * (CAN_H + gap), -4, id++);
+  for (let row = 0; row < 4; row++) {
+    const n = 4 - row;
+    for (let i = 0; i < n; i++) {
+      const c = makeCan((i - (n - 1) / 2) * s, y0 + row * (CAN_H + gap), -4, id++);
+      c.body.sleep(); // stays perfectly still until something hits it
+    }
+  }
 }
 
 function spawnBalls() {
-  while (balls.length) {
-    if (balls[0].heldBy) balls[0].heldBy.held = null;
-    removeItem(balls[0], balls);
-  }
-  for (let i = 0; i < 4; i++) makeBall((i - 1.5) * 0.15, PEDESTAL_TOP + BALL_RADIUS + 0.01, -0.8);
+  for (const h of hands) h.held = null;
+  while (balls.length) removeItem(balls[0], balls);
+  slots.fill(null); refillQueue.length = 0;
+  for (let i = 0; i < 4; i++) fillSlot(i);
 }
 
-function resetScene() {
+function resetCans() { // the pyramid only: balls are left alone
   buildTower();
-  spawnBalls();
   score.down = 0; score.throws = 0; score.won = false;
   drawBoard();
 }
-document.getElementById('resetBtn').addEventListener('click', resetScene);
+function resetScene() { resetCans(); spawnBalls(); }
+document.getElementById('resetBtn').addEventListener('click', resetCans);
+document.getElementById('refillBtn').addEventListener('click', spawnBalls);
 
 function updateScore() {
   let down = 0;
@@ -504,22 +566,70 @@ function updateScore() {
 }
 
 // ---------- VR hands: grab with trigger or grip, throw on release ----------
-const hands = [];
 const tmp = new THREE.Vector3();
 const controllerModels = new XRControllerModelFactory();
-let simTime = 0;
+const guide = { show: true, until: 25, touched: false }; // controller hints: shown for the first 25 s, X toggles
+
+function tipTexture(lines) {
+  const w = 420, h = 40 + lines.length * 44;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(15,15,20,0.82)';
+  g.beginPath(); g.roundRect(2, 2, w - 4, h - 4, 18); g.fill();
+  g.strokeStyle = '#ffe9a8'; g.lineWidth = 3; g.stroke();
+  g.font = 'bold 28px sans-serif'; g.textBaseline = 'middle';
+  lines.forEach(([key, text], i) => {
+    const y = 40 + i * 44;
+    g.fillStyle = '#ffe9a8'; g.textAlign = 'left'; g.fillText(key, 18, y);
+    g.fillStyle = '#fff'; g.font = '26px sans-serif'; g.fillText(text, 150, y); g.font = 'bold 28px sans-serif';
+  });
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return { tex: t, aspect: w / h };
+}
+const TIPS = {
+  right: [['TRIGGER', 'grab / throw'], ['GRIP', 'grab / throw'], ['A', 'reset cans'], ['B (hold)', 'quit VR']],
+  left:  [['TRIGGER', 'grab / throw'], ['GRIP', 'grab / throw'], ['X', 'show / hide hints'], ['Y', 'refill balls']],
+};
 
 for (let i = 0; i < 2; i++) {
   const ctrl = renderer.xr.getController(i);
-  const hand = { ctrl, held: null, prev: new THREE.Vector3(), vel: new THREE.Vector3(), hasPrev: false, hist: [] };
-  // visible "hand" marker so there is always something to see even if the model fails to load
-  ctrl.add(new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 12), std({ color: 0xffffff, roughness: 0.5 })));
+  const hand = { ctrl, held: null, hover: -1, handedness: null, connectedAt: null, tip: null, marker: null, laser: null,
+                 prev: new THREE.Vector3(), vel: new THREE.Vector3(), hasPrev: false, hist: [] };
   rig.add(ctrl);
   const grip = renderer.xr.getControllerGrip(i);
-  grip.add(controllerModels.createControllerModel(grip));
+  const model = controllerModels.createControllerModel(grip);
+  grip.add(model); // the real controller model: nothing is drawn over its buttons
   rig.add(grip);
+  hand.model = model;
+
+  // Only if the model cannot be downloaded: a small stand-in controller so there is still a hand to see.
+  hand.marker = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.12), std({ color: 0x333333, roughness: 0.5 }));
+  hand.marker.visible = false;
+  grip.add(hand.marker);
+
+  // pointer line, only visible while aiming at the menu panel
+  hand.laser = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]),
+    new THREE.LineBasicMaterial({ color: 0xffe9a8 }));
+  hand.laser.visible = false;
+  ctrl.add(hand.laser);
+
+  ctrl.addEventListener('connected', (e) => {
+    hand.handedness = (e.data && e.data.handedness) || (i === 0 ? 'left' : 'right');
+    hand.connectedAt = simTime;
+    if (hand.tip) { ctrl.remove(hand.tip); hand.tip.material.map.dispose(); }
+    const { tex, aspect } = tipTexture(TIPS[hand.handedness] || TIPS.right);
+    hand.tip = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+    hand.tip.scale.set(0.2 * aspect, 0.2, 1);
+    hand.tip.position.set(0, 0.17, 0.03); // floats above the controller, clear of its buttons
+    ctrl.add(hand.tip);
+  });
   for (const [down, up] of [['selectstart', 'selectend'], ['squeezestart', 'squeezeend']]) {
-    ctrl.addEventListener(down, () => { unlockAudio(); grab(hand); });
+    ctrl.addEventListener(down, () => {
+      unlockAudio();
+      if (down === 'selectstart' && hand.hover >= 0) { activateMenu(hand.hover); return; } // pressing a menu button
+      grab(hand);
+    });
     ctrl.addEventListener(up, () => release(hand));
   }
   hands.push(hand);
@@ -534,7 +644,11 @@ function grab(hand) {
     const d = tmp.distanceTo(b.mesh.position);
     if (d < bestD) { best = b; bestD = d; }
   }
-  if (best) { hand.held = best; best.heldBy = hand; play('grab', best.mesh.position, 0.6); }
+  if (best) {
+    hand.held = best; best.heldBy = hand;
+    freeSlotOf(best); // a new ball appears on the stand in its place
+    play('grab', best.mesh.position, 0.6);
+  }
 }
 
 // Hand velocity over the last ~100 ms (falls back to the last two samples at low frame rates).
@@ -565,6 +679,7 @@ function release(hand) {
 
 function updateHands(dt) {
   simTime += dt;
+  if (!guide.touched && simTime > guide.until) guide.show = false;
   for (const h of hands) {
     h.ctrl.getWorldPosition(tmp);
     h.hist.push({ t: simTime, p: tmp.clone() });
@@ -575,26 +690,130 @@ function updateHands(dt) {
       h.held.body.velocity.set(0, 0, 0);
       h.held.body.angularVelocity.set(0, 0, 0);
     }
+    if (h.tip) h.tip.visible = guide.show;
+    h.marker.visible = h.connectedAt !== null && !h.model.motionController && simTime - h.connectedAt > 5;
   }
 }
 
-// A / B button resets the scene while in VR
-let resetLatch = false;
-function pollVRButtons() {
+// ---------- in-world menu + controls guide (point a controller at a button and pull the trigger) ----------
+const MENU_W = 512, MENU_H = 720;
+const menuCanvas = document.createElement('canvas');
+menuCanvas.width = MENU_W; menuCanvas.height = MENU_H;
+const menuTex = new THREE.CanvasTexture(menuCanvas);
+menuTex.colorSpace = THREE.SRGBColorSpace;
+menuTex.anisotropy = 4;
+const menuMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(0.5, 0.5 * MENU_H / MENU_W),
+  new THREE.MeshBasicMaterial({ map: menuTex, transparent: true }));
+menuMesh.position.set(-0.95, 1.3, -0.6);
+menuMesh.rotation.y = 1.0; // turned toward the player
+scene.add(menuMesh);
+
+function quitVR() {
   const session = renderer.xr.getSession();
-  if (!session) return;
-  let pressed = false;
+  if (session) session.end();
+  else menu.status = 'Quit works inside VR (close the tab on desktop)';
+}
+const MENU_BUTTONS = [
+  { label: 'Reset Cans', key: 'A', y: 96, action: () => resetCans() },
+  { label: 'Refill Balls', key: 'Y', y: 192, action: () => spawnBalls() },
+  { label: 'Quit VR', key: 'B hold', y: 288, action: () => quitVR() },
+];
+const menu = { status: '', drawnKey: '' };
+function activateMenu(i) { play('click', menuMesh.position, 0.8); MENU_BUTTONS[i].action(); }
+
+function drawMenu() {
+  const hovers = hands.map(h => h.hover).join(',');
+  const key = `${hovers}|${menu.status}`;
+  if (key === menu.drawnKey) return;
+  menu.drawnKey = key;
+  const g = menuCanvas.getContext('2d');
+  g.clearRect(0, 0, MENU_W, MENU_H);
+  g.fillStyle = 'rgba(15,15,22,0.92)';
+  g.beginPath(); g.roundRect(0, 0, MENU_W, MENU_H, 32); g.fill();
+  g.strokeStyle = '#ffe9a8'; g.lineWidth = 6; g.stroke();
+  g.textBaseline = 'middle';
+  g.fillStyle = '#ffe9a8'; g.font = 'bold 44px sans-serif'; g.textAlign = 'center';
+  g.fillText('CAN TOSS', MENU_W / 2, 48);
+  MENU_BUTTONS.forEach((b, i) => {
+    const hot = hands.some(h => h.hover === i);
+    g.fillStyle = hot ? '#e0a526' : '#2d3340';
+    g.beginPath(); g.roundRect(36, b.y, 440, 80, 16); g.fill();
+    g.fillStyle = hot ? '#111' : '#fff'; g.font = 'bold 38px sans-serif'; g.textAlign = 'left';
+    g.fillText(b.label, 58, b.y + 40);
+    g.font = '28px sans-serif'; g.textAlign = 'right'; g.fillStyle = hot ? '#222' : '#ffe9a8';
+    g.fillText(b.key, 460, b.y + 40);
+  });
+  // controls guide
+  g.fillStyle = '#ffe9a8'; g.font = 'bold 32px sans-serif'; g.textAlign = 'left';
+  g.fillText('CONTROLS', 36, 408);
+  const rows = [['TRIGGER / GRIP', 'grab / throw'], ['A', 'reset cans'], ['B  (hold 1 s)', 'quit VR'],
+                ['X', 'show / hide hints'], ['Y', 'refill balls']];
+  rows.forEach(([k, t], i) => {
+    const y = 456 + i * 46;
+    g.fillStyle = '#2d3340'; g.beginPath(); g.roundRect(36, y - 18, 210, 36, 10); g.fill();
+    g.fillStyle = '#ffe9a8'; g.font = 'bold 24px sans-serif'; g.fillText(k, 48, y);
+    g.fillStyle = '#fff'; g.font = '24px sans-serif'; g.fillText(t, 260, y);
+  });
+  g.fillStyle = '#9fb0c8'; g.font = '22px sans-serif'; g.textAlign = 'center';
+  g.fillText('Point at a button and pull the trigger', MENU_W / 2, 690);
+  if (menu.status) {
+    g.fillStyle = '#ff8a7a'; g.font = 'bold 26px sans-serif';
+    g.fillText(menu.status, MENU_W / 2, 668);
+  }
+  menuTex.needsUpdate = true;
+}
+
+const ray = new THREE.Raycaster();
+const _o = new THREE.Vector3(), _d = new THREE.Vector3(), _q = new THREE.Quaternion();
+function updateMenu() {
+  for (const h of hands) {
+    h.ctrl.getWorldPosition(_o);
+    h.ctrl.getWorldQuaternion(_q);
+    _d.set(0, 0, -1).applyQuaternion(_q);
+    ray.set(_o, _d);
+    const hit = ray.intersectObject(menuMesh)[0];
+    h.hover = -1;
+    if (hit && hit.distance < 4 && !h.held) {
+      const px = hit.uv.x * MENU_W, py = (1 - hit.uv.y) * MENU_H;
+      MENU_BUTTONS.forEach((b, i) => { if (px >= 36 && px <= 476 && py >= b.y && py <= b.y + 80) h.hover = i; });
+      h.laser.scale.z = hit.distance;
+    }
+    h.laser.visible = !!hit && hit.distance < 4 && !h.held;
+  }
+  drawMenu();
+}
+
+// Controller buttons while in VR: A reset cans, B (hold) quit, X hints, Y refill balls.
+// Quest layout: buttons[4] = A / X, buttons[5] = B / Y.
+const latch = {};
+let quitHold = 0;
+function pollVRButtons(dt) {
+  const session = renderer.xr.getSession();
+  if (!session) { quitHold = 0; return; }
+  let bRight = false;
+  const edge = (id, pressed) => { const was = latch[id]; latch[id] = pressed; return pressed && !was; };
   for (const src of session.inputSources) {
     const b = src.gamepad && src.gamepad.buttons;
-    if (b && ((b[4] && b[4].pressed) || (b[5] && b[5].pressed))) pressed = true;
+    if (!b) continue;
+    const p4 = !!(b[4] && b[4].pressed), p5 = !!(b[5] && b[5].pressed);
+    if (src.handedness === 'right') {
+      if (edge('A', p4)) { play('click', null, 0.8); resetCans(); }
+      bRight = p5;
+    } else if (src.handedness === 'left') {
+      if (edge('X', p4)) { guide.show = !guide.show; guide.touched = true; play('click', null, 0.8); }
+      if (edge('Y', p5)) { play('click', null, 0.8); spawnBalls(); }
+    }
   }
-  if (pressed && !resetLatch) resetScene();
-  resetLatch = pressed;
+  quitHold = bRight ? quitHold + dt : 0;
+  menu.status = bRight ? `Hold B to quit VR… ${Math.min(100, Math.round(quitHold / QUIT_HOLD * 100))}%` : '';
+  if (quitHold >= QUIT_HOLD) { quitHold = 0; quitVR(); }
 }
+const QUIT_HOLD = 1.0; // seconds
 
 // ---------- desktop fallback: drag to look, WASD to move, click to throw ----------
 const keys = {};
-window.addEventListener('keydown', e => { keys[e.code] = true; });
+window.addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'KeyR') resetCans(); });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
 let dragging = false, moved = 0, lastX = 0, lastY = 0;
@@ -616,12 +835,9 @@ function throwBall(speed = 8) {
   const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
   const p = camera.getWorldPosition(new THREE.Vector3()).addScaledVector(dir, 0.4);
   const ball = makeBall(p.x, p.y, p.z);
-  ball.thrown = true;
   ball.body.velocity.set(dir.x * speed, dir.y * speed + 1.5, dir.z * speed);
   score.throws++;
   play('whoosh', p, 0.6);
-  const thrown = balls.filter(b => b.thrown);
-  if (thrown.length > 10) removeItem(thrown[0], balls);
   return ball;
 }
 
@@ -640,22 +856,19 @@ const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.05);
   moveDesktop(dt);
-  pollVRButtons();
+  pollVRButtons(dt);
   updateHands(dt);
+  updateMenu();
+  updateRefills();
   // small fixed step: a 9.6 cm ball at ~10 m/s must not tunnel through 6.6 cm cans
   world.step(1 / 240, dt, 12);
   for (const { mesh, body } of dynamics) {
     mesh.position.copy(body.position);
     mesh.quaternion.copy(body.quaternion);
   }
-  // balls that roll off the world come back to the pedestal
+  // balls that fall off the world are removed (a slot ball is replaced on the stand)
   for (const b of balls) {
-    if (b.body.position.y < -3 && !b.heldBy) {
-      if (b.thrown) { removeItem(b, balls); break; }
-      b.body.position.set(...b.home);
-      b.body.velocity.set(0, 0, 0);
-      b.body.angularVelocity.set(0, 0, 0);
-    }
+    if (b.body.position.y < -3 && !b.heldBy) { removeItem(b, balls); break; }
   }
   updateScore();
   updateListener();
@@ -665,7 +878,7 @@ renderer.setAnimationLoop(() => {
 resetScene();
 
 // handle for tests / debugging
-window.game = { THREE, scene, camera, rig, renderer, world, cans, balls, hands, score, audio, play, resetScene, throwBall, grab, release };
+window.game = { THREE, scene, camera, rig, renderer, world, cans, balls, slots, hands, score, audio, menu, menuMesh, guide, MENU_BUTTONS, play, resetScene, resetCans, spawnBalls, throwBall, grab, release, quitVR };
 </script>
 </body>
 </html>
