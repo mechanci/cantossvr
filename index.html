@@ -4,7 +4,7 @@
   <title>VR Can Toss</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/n5ro/aframe-physics-system@v4.2.2/dist/aframe-physics-system.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/aframe-physics-system@4.0.1/dist/aframe-physics-system.min.js"></script>
   <script src="https://unpkg.com/aframe-extras@7.2.0/dist/aframe-extras.min.js"></script>
   <style>
     body { margin: 0; overflow: hidden; }
@@ -28,17 +28,19 @@
   <a-plane position="0 0 -3" rotation="-90 0 0" width="20" height="30"
     color="#4a7c3f" static-body></a-plane>
 
-  <!-- Back wall marker / table -->
-  <a-box position="0 0.5 -6" width="2" height="1" depth="2" color="#8b5a2b" static-body></a-box>
+  <!-- Target table (top surface at y = 0.8) -->
+  <a-box id="table" position="0 0.4 -4" width="2.2" height="0.8" depth="0.9"
+    color="#8b5a2b" static-body></a-box>
 
-  <!-- Can Pyramid: 6 bottom, 3 middle, 1 top -->
+  <!-- Cans (built by script, resting on the table) -->
   <a-entity id="canTower"></a-entity>
 
   <!-- Throwing line marker -->
   <a-ring position="0 0.01 -1" rotation="-90 0 0" radius-inner="0.4" radius-outer="0.5" color="white"></a-ring>
 
-  <!-- Ball spawner: a tray of grabbable balls near the player -->
-  <a-entity id="ballTray" position="0.4 1 -0.8"></a-entity>
+  <!-- Pedestal holding the balls (top at y = 0.9) -->
+  <a-cylinder position="0 0.45 -0.8" radius="0.4" height="0.9" color="#555" static-body></a-cylinder>
+  <a-entity id="balls"></a-entity>
 
   <!-- Sky -->
   <a-sky src="#skyTexture" rotation="0 -130 0"></a-sky>
@@ -46,66 +48,110 @@
   <!-- Camera rig with hand controls -->
   <a-entity id="rig" position="0 0 0" movement-controls="speed: 0.1">
     <a-entity camera position="0 1.6 0" look-controls wasd-controls></a-entity>
-    <a-entity id="leftHand" hand-controls="hand: left" laser-controls="hand: left"
-      super-hands
-      physics-collider
-      sphere-collider="objects: .grabbable"></a-entity>
-    <a-entity id="rightHand" hand-controls="hand: right" laser-controls="hand: right"
-      super-hands
-      physics-collider
-      sphere-collider="objects: .grabbable"></a-entity>
+    <a-entity id="leftHand" hand-controls="hand: left" hand-grabber></a-entity>
+    <a-entity id="rightHand" hand-controls="hand: right" hand-grabber></a-entity>
   </a-entity>
 
 </a-scene>
 
 <script>
-  // Can tower builder
+  const BALL_RADIUS = 0.1;
+  const GRAB_RANGE = 0.3;
+  const TABLE_TOP = 0.8;
+  const PEDESTAL_TOP = 0.9;
+
+  // Grab with trigger or grip: nearest ball within reach follows the hand,
+  // and is released with the hand's velocity so it can be thrown.
+  AFRAME.registerComponent('hand-grabber', {
+    init: function () {
+      this.held = null;
+      this.prev = new THREE.Vector3();
+      this.pos = new THREE.Vector3();
+      this.vel = new THREE.Vector3();
+      this.hasPrev = false;
+      ['triggerdown', 'gripdown'].forEach(e => this.el.addEventListener(e, () => this.grab()));
+      ['triggerup', 'gripup'].forEach(e => this.el.addEventListener(e, () => this.release()));
+    },
+    grab: function () {
+      if (this.held) return;
+      this.el.object3D.getWorldPosition(this.pos);
+      let best = null, bestD = GRAB_RANGE;
+      const p = new THREE.Vector3();
+      document.querySelectorAll('.grabbable').forEach(b => {
+        if (!b.body || b.heldBy) return;
+        b.object3D.getWorldPosition(p);
+        const d = p.distanceTo(this.pos);
+        if (d < bestD) { best = b; bestD = d; }
+      });
+      if (best) { this.held = best; best.heldBy = this; }
+    },
+    release: function () {
+      const b = this.held;
+      if (!b) return;
+      this.held = null;
+      b.heldBy = null;
+      if (b.body) {
+        b.body.velocity.set(this.vel.x, this.vel.y, this.vel.z);
+        b.body.wakeUp();
+      }
+    },
+    tick: function (t, dt) {
+      if (!dt) return;
+      this.el.object3D.getWorldPosition(this.pos);
+      if (this.hasPrev) {
+        // smoothed hand velocity in m/s
+        const inst = this.pos.clone().sub(this.prev).multiplyScalar(1000 / dt);
+        this.vel.lerp(inst, 0.5);
+      }
+      this.prev.copy(this.pos);
+      this.hasPrev = true;
+      const b = this.held;
+      if (b && b.body) {
+        b.body.position.set(this.pos.x, this.pos.y, this.pos.z);
+        b.body.velocity.set(0, 0, 0);
+        b.body.angularVelocity.set(0, 0, 0);
+      }
+    }
+  });
+
+  function makeBall(x, y, z) {
+    const ball = document.createElement('a-sphere');
+    ball.setAttribute('radius', BALL_RADIUS);
+    ball.setAttribute('color', '#f1c34e');
+    ball.setAttribute('position', `${x} ${y} ${z}`);
+    ball.setAttribute('dynamic-body', 'mass: 0.3; shape: sphere; linearDamping: 0.05; angularDamping: 0.2');
+    ball.classList.add('grabbable');
+    document.getElementById('balls').appendChild(ball);
+    return ball;
+  }
+
+  function spawnBalls() {
+    document.getElementById('balls').innerHTML = '';
+    for (let i = 0; i < 4; i++) {
+      makeBall(i * 0.2 - 0.3, PEDESTAL_TOP + BALL_RADIUS + 0.02, -0.8);
+    }
+  }
+
+  // Pyramid of 6 / 3 / 1 cans sitting on the table
   function buildTower() {
     const tower = document.getElementById('canTower');
     tower.innerHTML = '';
-    const canRadius = 0.15;
-    const canHeight = 0.3;
-    const rows = [
-      { count: 6, y: canHeight/2 },
-      { count: 3, y: canHeight*1.5 },
-      { count: 1, y: canHeight*2.5 }
-    ];
-    let idCounter = 0;
-    rows.forEach(row => {
-      const spacing = canRadius * 2.2;
-      const totalWidth = (row.count - 1) * spacing;
-      for (let i = 0; i < row.count; i++) {
-        const x = -totalWidth/2 + i * spacing;
-        const can = document.createElement('a-cylinder');
-        can.setAttribute('radius', canRadius);
-        can.setAttribute('height', canHeight);
-        can.setAttribute('color', idCounter % 2 === 0 ? '#c0392b' : '#bdc3c7');
-        can.setAttribute('position', `${x} ${row.y} -4`);
-        can.setAttribute('dynamic-body', 'mass: 0.3; linearDamping: 0.3; angularDamping: 0.3');
-        can.setAttribute('shadow', '');
-        tower.appendChild(can);
-        idCounter++;
-      }
-    });
-  }
-
-  // Ball spawner ? keeps 4 balls available to grab
-  function spawnBalls() {
-    const tray = document.getElementById('ballTray');
-    tray.innerHTML = '';
-    for (let i = 0; i < 4; i++) {
-      const ball = document.createElement('a-sphere');
-      ball.setAttribute('radius', 0.1);
-      ball.setAttribute('color', '#f1c34e');
-      ball.setAttribute('position', `${i * 0.25 - 0.375} 0 0`);
-      ball.setAttribute('dynamic-body', 'mass: 0.5; linearDamping: 0.1');
-      ball.setAttribute('class', 'grabbable');
-      ball.setAttribute('grabbable', '');
-      ball.setAttribute('stretchable', '');
-      ball.setAttribute('draggable', '');
-      ball.setAttribute('shadow', '');
-      tray.appendChild(ball);
-    }
+    const r = 0.15, h = 0.3, gap = 0.01;
+    const s = r * 2 + 0.02; // centre spacing within a row
+    let id = 0;
+    const add = (x, y, z) => {
+      const can = document.createElement('a-cylinder');
+      can.setAttribute('radius', r);
+      can.setAttribute('height', h);
+      can.setAttribute('color', id++ % 2 === 0 ? '#c0392b' : '#bdc3c7');
+      can.setAttribute('position', `${x} ${y} ${z}`);
+      can.setAttribute('dynamic-body', 'mass: 0.3; shape: cylinder; linearDamping: 0.2; angularDamping: 0.2');
+      tower.appendChild(can);
+    };
+    const y0 = TABLE_TOP + h / 2 + gap;
+    for (let i = 0; i < 6; i++) add((i - 2.5) * s, y0, -4);
+    for (let i = 0; i < 3; i++) add((i - 1) * 2 * s, y0 + h + gap, -4);
+    add(0, y0 + 2 * (h + gap), -4);
   }
 
   function resetScene() {
@@ -113,8 +159,26 @@
     spawnBalls();
   }
 
-  document.querySelector('a-scene').addEventListener('loaded', () => {
-    resetScene();
+  const sceneEl = document.querySelector('a-scene');
+  sceneEl.addEventListener('loaded', resetScene);
+
+  // Desktop fallback: click to throw a ball from the camera
+  const thrown = [];
+  sceneEl.addEventListener('loaded', () => {
+    window.addEventListener('mousedown', e => {
+      if (sceneEl.is('vr-mode') || e.target.id === 'resetBtn') return;
+      const cam = sceneEl.camera.el.object3D;
+      const p = new THREE.Vector3(), d = new THREE.Vector3();
+      cam.getWorldPosition(p);
+      cam.getWorldDirection(d); d.negate();
+      p.addScaledVector(d, 0.4);
+      const ball = makeBall(p.x, p.y, p.z);
+      thrown.push(ball);
+      ball.addEventListener('body-loaded', () => {
+        ball.body.velocity.set(d.x * 9, d.y * 9 + 1.5, d.z * 9);
+      });
+      if (thrown.length > 10) thrown.shift().remove();
+    });
   });
 </script>
 
