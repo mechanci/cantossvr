@@ -91,48 +91,59 @@ test('help text is collapsed by default (not an always-on overlay)', () => {
   assert.match(html, /id="helpBtn"/);
 });
 
-// ---------------------------------------------------------------- three vertex design alignment
+// ---------------------------------------------------------------- friendly look, no direct branding
 
-test('design: fonts load from Google Fonts (Lexend + IBM Plex Mono, display=swap) with system fallbacks', () => {
-  assert.match(html, /fonts\.googleapis\.com\/css2\?family=Lexend:wght@300;400;500;600;700&family=IBM\+Plex\+Mono:wght@400;500&display=swap/);
-  assert.match(moduleSrc, /FONT_SANS = 'Lexend, "Segoe UI", Calibri/);
-  assert.match(moduleSrc, /FONT_MONO = '"IBM Plex Mono", Consolas/);
+test('design: fonts are Fredoka (interface and world) and Gochi Hand (chalkboard), from Google Fonts with system fallbacks', () => {
+  assert.match(html, /fonts\.googleapis\.com\/css2\?family=Fredoka:wght@400;500;600;700&family=Gochi\+Hand&display=swap/);
+  assert.match(moduleSrc, /FONT_SANS = 'Fredoka, "Segoe UI"/);
+  assert.match(moduleSrc, /WORLD_HAND = '"Gochi Hand"/);
+  assert.match(html, /--font: Fredoka/);
+  assert.doesNotMatch(html, /Lexend|IBM\+Plex|IBM Plex/);
 });
 
-test('design: brand tokens are defined and the legacy off-brand UI colours are gone', () => {
-  for (const hex of ['#ff9d55', '#0b1c28', '#13293a', '#1f4260', '#7d98ae', '#24405a', '#a3b1bd']) {
-    assert.ok(html.toLowerCase().includes(hex), `missing token ${hex}`);
-  }
-  // old gold/grey/green/red UI colours must not creep back
-  for (const old of ['#ffe9a8\'', '#e0a526', '#2d3340', '#9fb0c8', '#7dffa0', '#ff9a8a', '#ff8a7a', '#6f7d92']) {
-    // #ffe9a8 is still the booth sign / bulb colour in the world, so only the UI use (quoted in canvas code) is checked
-    const inUi = moduleSrc.split('\n').filter(l => l.includes(old) && !/signTex\(|bulbMat|PointLight|0xffe9a8/.test(l));
-    assert.deepStrictEqual(inUi, [], `legacy colour ${old} used in UI code`);
-  }
+test('design: warm palette (cream, wood, coral, sunshine) and no leftover dark-navy interface colours', () => {
+  for (const hex of ['#fff6e6', '#a8673a', '#ff6f61', '#ffc93c', '#3a2f2b']) assert.ok(html.toLowerCase().includes(hex), `missing ${hex}`);
+  for (const old of ['#0b1c28', '#13293a', '#1f4260', '#24405a', '#7d98ae', '#ff9d55']) assert.ok(!html.toLowerCase().includes(old), `old navy-theme colour ${old} is still in the page`);
 });
 
 test('design: canvas text goes through the font helpers (no bare sans-serif font strings)', () => {
   assert.doesNotMatch(moduleSrc, /\d+px sans-serif/);
-  assert.match(html, /--tv-font-sans: Lexend/);
 });
 
-test('design: UI is square-ish (radius <= 4px) and flat (no gradients in UI css)', () => {
+test('design: friendly shapes (pill buttons, rounded cards) and flat colour (no gradients in the page css)', () => {
   const css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
-  for (const m of css.matchAll(/border-radius:\s*([^;]+);/g)) {
-    assert.ok(/var\(--tv-radius\)|9999px/.test(m[1]) || parseFloat(m[1]) <= 4, `radius too round: ${m[1]}`);
-  }
+  assert.match(css, /\.btn \{[^}]*border-radius: 999px/);
   assert.doesNotMatch(css, /gradient\(/);
-  assert.doesNotMatch(moduleSrc, /createLinearGradient\([\s\S]{0,200}YOU WIN/); // win banner is flat orange
+  assert.match(moduleSrc, /roundRect\(g, 3, 3, PANEL_W - 6, PANEL_H - 6, 30\)/); // rounded cream card
 });
 
-test('design: logo and favicon files exist and are used', () => {
-  for (const f of ['threevertex-lockup-orange.svg', 'threevertex-mark-on-navy.svg']) {
-    assert.ok(fs.existsSync(path.join(__dirname, '..', 'assets', f)), `missing assets/${f}`);
-    assert.ok(html.includes(`assets/${f}`), `assets/${f} is not referenced`);
-  }
+test('no direct branding: no logo, brand name, lockup files or credit plate anywhere', () => {
+  assert.doesNotMatch(html, /three ?vertex|threevertex|lockup/i);
+  assert.doesNotMatch(html, /assets\//);
+  assert.ok(!fs.existsSync(path.join(__dirname, '..', 'assets')), 'assets/ (logo files) should not exist');
+  assert.doesNotMatch(moduleSrc, /credit_plate|new Image\(\)/);
 });
 
-test('design: the brand name is never typed in running UI text (the logo is a file)', () => {
-  assert.doesNotMatch(moduleSrc, /(fillText|drawText)\([^)]*three vertex/i);
-  assert.doesNotMatch(moduleSrc, /Three Vertex|ThreeVertex|3Vertex/);
+test('"You win" appears once: only the banner says it (not the chalkboard, not the score card)', () => {
+  assert.doesNotMatch(moduleSrc, /chalk\([^)]*you win/i);
+  assert.doesNotMatch(moduleSrc, /title\('You win/i);
+  assert.match(moduleSrc, /title\('Your score'\)/);
+  assert.strictEqual((moduleSrc.match(/fillText\('YOU WIN!'/g) || []).length, 1);
+});
+
+test('scene: the booth is ported from the Claude Design scene, merged for performance, with real colliders', () => {
+  assert.match(moduleSrc, /mergeGeometries/);
+  assert.match(moduleSrc, /function mergeStatic/);
+  assert.match(moduleSrc, /function booth\(/);
+  assert.match(moduleSrc, /addCollider\(3\.18, COUNTER_TOP/);       // counter
+  assert.match(moduleSrc, /addCollider\(3\.0, 2\.4, 0\.06/);         // back wall
+  assert.match(moduleSrc, /woodBox\(1\.2, TABLE_TOP, 0\.6, 0, TABLE_TOP \/ 2, -4\)/);   // can table keeps its real place
+  assert.match(moduleSrc, /woodBox\(0\.8, PEDESTAL_TOP, 0\.4, 0, PEDESTAL_TOP \/ 2, -0\.8\)/); // ball stand too
+  assert.doesNotMatch(moduleSrc, /CircleGeometry\(90/);               // no giant ground triangles (depth-sorting artefacts)
+});
+
+test('VR keyboard: on-screen keys exist for A-Z, 0-9 and DEL', () => {
+  assert.match(moduleSrc, /\['1234567890', 'QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'\]/);
+  assert.match(moduleSrc, /id: 'key_DEL'/);
+  assert.match(moduleSrc, /function typeKey/);
 });

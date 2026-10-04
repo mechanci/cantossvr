@@ -1,84 +1,89 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Can Toss VR — three vertex</title>
+  <title>Can Toss VR</title>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#0b1c28">
-  <link rel="icon" type="image/svg+xml" href="assets/threevertex-mark-on-navy.svg">
+  <meta name="theme-color" content="#d6ecf7">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23d6ecf7'/%3E%3Crect x='20' y='12' width='24' height='40' rx='4' fill='%23d6d9dc'/%3E%3Crect x='20' y='25' width='24' height='15' fill='%23ff6f61'/%3E%3Cellipse cx='32' cy='12' rx='12' ry='3.5' fill='%23eceff1'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Gochi+Hand&display=swap">
   <style>
-    /* three vertex design system tokens, dark theme (project/tokens.json v0.1.0). Game-first: these style the
-       interface only; the carnival booth and the 3D world keep their own colours. */
+    /* Friendly palette from the Claude Design scene: cream, wood, coral, sunshine, teal. */
     :root {
-      --tv-navy: #0b1c28; --tv-raised: #13293a; --tv-highlight: #1e3a50;
-      --tv-heading: #ffffff; --tv-ink: #f2f5f7; --tv-muted: #a3b1bd;
-      --tv-orange: #ff9d55; --tv-on-accent: #1f4260;
-      --tv-line: #24405a; --tv-line-strong: #7d98ae;
-      --tv-radius: 4px;
-      --tv-font-sans: Lexend, "Segoe UI", Calibri, system-ui, sans-serif;
-      --tv-font-mono: "IBM Plex Mono", Consolas, "SF Mono", monospace;
+      --cream: #fff6e6; --ink: #3a2f2b; --muted: #7a6a60; --line: #e8d8bf; --line-strong: #c9b08a; --wood: #a8673a;
+      --coral: #ff6f61; --coral-deep: #c4452f; --sun: #ffc93c; --teal: #2fbfb0; --sky-ink: #2a6f8f;
+      --font: Fredoka, "Segoe UI", system-ui, sans-serif;
     }
-    body { margin: 0; overflow: hidden; background: var(--tv-navy); font-family: var(--tv-font-sans); }
+    body { margin: 0; overflow: hidden; background: #d6ecf7; font-family: var(--font); }
     canvas { display: block; }
-    :focus-visible { outline: 2px solid var(--tv-orange); outline-offset: 2px; }
+    :focus-visible { outline: 3px solid var(--coral); outline-offset: 2px; }
 
-    /* buttons (design system: Button) */
-    .tv-btn {
-      display: inline-flex; align-items: center; font: 600 15px/1 var(--tv-font-sans); padding: 12px 20px;
-      border-radius: var(--tv-radius); border: 1px solid transparent; cursor: pointer;
-      transition: background .15s, border-color .15s, color .15s;
+    /* chunky rounded buttons */
+    .btn {
+      font: 600 15px/1 var(--font); padding: 11px 18px; border-radius: 999px; border: 3px solid #fff; background: #fff;
+      color: var(--sky-ink); box-shadow: 0 3px 0 rgba(0, 0, 0, .15); cursor: pointer; white-space: nowrap;
+      transition: background .2s ease-out, color .2s ease-out, transform .1s;
     }
-    .tv-btn--primary { background: var(--tv-orange); color: var(--tv-on-accent); }
-    .tv-btn--primary:hover { box-shadow: inset 0 0 0 2px var(--tv-navy); }
-    .tv-btn--secondary { background: var(--tv-raised); color: var(--tv-ink); border-color: var(--tv-line-strong); }
-    .tv-btn--secondary:hover { border-color: var(--tv-ink); }
-    #bar { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 999; display: flex; gap: 8px; }
+    .btn:hover { background: var(--sun); color: var(--ink); }
+    .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0, 0, 0, .15); }
+    .btn--primary { background: var(--sun); color: var(--ink); }
+    .btn--primary:hover { background: var(--coral); }
+    #bar { position: fixed; top: 16px; left: 16px; z-index: 999; display: flex; gap: 8px; }
 
     /* three's default "Enter VR" button, restyled */
     #VRButton {
       position: fixed !important; bottom: 20px !important; left: 50% !important; right: auto !important;
-      transform: translateX(-50%); width: auto !important; min-width: 150px; padding: 13px 24px !important;
-      border: 1px solid transparent !important; border-radius: var(--tv-radius) !important;
-      background: var(--tv-orange) !important; color: var(--tv-on-accent) !important;
-      font: 600 14px/1 var(--tv-font-sans) !important; letter-spacing: .06em; opacity: 1 !important;
+      transform: translateX(-50%); width: auto !important; min-width: 150px; padding: 13px 26px !important;
+      border: 3px solid #fff !important; border-radius: 999px !important; background: var(--sun) !important; color: var(--ink) !important;
+      font: 600 15px/1 var(--font) !important; letter-spacing: .04em; opacity: 1 !important; box-shadow: 0 3px 0 rgba(0, 0, 0, .15);
     }
-    #VRButton:hover { box-shadow: inset 0 0 0 2px var(--tv-navy); }
-    #VRButton.tv-off {
-      background: var(--tv-raised) !important; color: var(--tv-muted) !important;
-      border-color: var(--tv-line) !important; cursor: default !important; box-shadow: none;
-    }
+    #VRButton:hover { background: var(--coral) !important; }
+    #VRButton.vr-off { background: rgba(255, 255, 255, .78) !important; color: var(--muted) !important; cursor: default !important; box-shadow: none; }
 
     /* help: collapsed behind "?" */
     #helpBtn {
-      position: fixed; right: 16px; bottom: 16px; z-index: 999; width: 40px; height: 40px;
-      background: var(--tv-raised); color: var(--tv-ink); border: 1px solid var(--tv-line-strong);
-      border-radius: var(--tv-radius); font: 500 18px var(--tv-font-mono); cursor: pointer;
+      position: fixed; right: 16px; bottom: 16px; z-index: 999; width: 44px; height: 44px; border-radius: 50%;
+      background: #fff; color: var(--sky-ink); border: 3px solid #fff; box-shadow: 0 3px 0 rgba(0, 0, 0, .15);
+      font: 600 20px var(--font); cursor: pointer;
     }
-    #helpBtn:hover { border-color: var(--tv-ink); }
+    #helpBtn:hover { background: var(--sun); color: var(--ink); }
     #help {
-      display: none; position: fixed; right: 16px; bottom: 64px; z-index: 999; width: 280px; box-sizing: border-box;
-      background: var(--tv-raised); color: var(--tv-ink); border: 1px solid var(--tv-line); border-radius: var(--tv-radius);
-      padding: 16px; font: 300 14px/1.5 var(--tv-font-sans); box-shadow: 0 8px 24px rgba(11, 28, 40, 0.12);
+      display: none; position: fixed; right: 16px; bottom: 70px; z-index: 999; width: 290px; box-sizing: border-box;
+      background: var(--cream); color: var(--ink); border: 4px solid var(--wood); border-radius: 20px;
+      padding: 16px 18px; font: 400 14px/1.5 var(--font); box-shadow: 0 4px 0 rgba(168, 103, 58, .35);
     }
     #help.open { display: block; }
-    #help h2 { margin: 0 0 8px; font: 500 11px var(--tv-font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--tv-orange); }
+    #help h2 { margin: 0 0 8px; font: 600 14px var(--font); color: var(--coral-deep); }
     #help h2:not(:first-child) { margin-top: 14px; }
     #help dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: center; }
     #help dd { margin: 0; }
     #help kbd {
-      font: 500 11px var(--tv-font-mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap;
-      color: var(--tv-ink); border: 1px solid var(--tv-line-strong); border-radius: 2px; padding: 2px 6px;
+      font: 600 12px var(--font); white-space: nowrap; color: var(--ink); background: #fff;
+      border: 2px solid var(--line-strong); border-radius: 8px; padding: 1px 8px; box-shadow: 0 2px 0 var(--line-strong);
+    }
+
+    /* desktop aiming: crosshair, charge bar, hint */
+    #crosshair { position: fixed; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; z-index: 50; pointer-events: none; display: none; }
+    #power {
+      position: fixed; left: 50%; top: calc(50% + 28px); width: 120px; height: 10px; margin-left: -60px; z-index: 50; display: none;
+      pointer-events: none; background: rgba(255, 255, 255, .7); border: 3px solid #fff; border-radius: 999px; box-sizing: content-box; overflow: hidden;
+      box-shadow: 0 2px 0 rgba(0, 0, 0, .15);
+    }
+    #power i { display: block; height: 100%; width: 0; background: var(--coral); border-radius: 999px; }
+    #aimHint {
+      position: fixed; left: 50%; bottom: 80px; transform: translateX(-50%); z-index: 50; display: none; pointer-events: none; white-space: nowrap;
+      background: rgba(255, 255, 255, .92); color: var(--ink); border-radius: 999px; padding: 8px 16px; font: 500 14px var(--font);
+      box-shadow: 0 3px 0 rgba(0, 0, 0, .12);
     }
 
     /* shown until the first frame renders (or if the 3D libraries cannot be reached) */
     #boot {
       position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 14px; background: var(--tv-navy); color: var(--tv-muted); font: 500 12px var(--tv-font-mono); letter-spacing: .14em; text-transform: uppercase;
+      gap: 14px; background: #d6ecf7; color: var(--ink); font: 500 17px var(--font);
     }
-    #boot::before { content: ""; width: 14px; height: 14px; border-radius: 9999px; background: var(--tv-orange); }
+    #boot::before { content: ""; width: 18px; height: 18px; border-radius: 9999px; background: var(--coral); }
     #boot.done { display: none; }
   </style>
   <script type="importmap">
@@ -92,18 +97,27 @@
   </script>
 </head>
 <body>
-<div id="boot"><span id="bootText">Loading can toss</span></div>
+<div id="boot"><span id="bootText">Loading Can Toss…</span></div>
 <div id="bar">
-  <button id="resetBtn" class="tv-btn tv-btn--secondary">Reset Cans</button>
-  <button id="refillBtn" class="tv-btn tv-btn--secondary">Refill Balls</button>
-  <button id="menuBtn" class="tv-btn tv-btn--primary">Menu</button>
+  <button id="resetBtn" class="btn">Reset Cans</button>
+  <button id="refillBtn" class="btn">Refill Balls</button>
+  <button id="menuBtn" class="btn btn--primary">Menu</button>
 </div>
+<svg id="crosshair" viewBox="0 0 30 30" aria-hidden="true">
+  <circle cx="15" cy="15" r="9" fill="none" stroke="rgba(58,47,43,.55)" stroke-width="5"/>
+  <circle cx="15" cy="15" r="9" fill="none" stroke="#ffffff" stroke-width="2.4"/>
+  <circle cx="15" cy="15" r="2.4" fill="#ff6f61"/>
+</svg>
+<div id="power"><i></i></div>
+<div id="aimHint"></div>
 <button id="helpBtn" title="Controls" aria-label="Controls">?</button>
 <div id="help" role="dialog" aria-label="Controls">
   <h2>Desktop</h2>
   <dl>
-    <dt><kbd>Click</kbd></dt><dd>throw a ball</dd>
-    <dt><kbd>Drag</kbd></dt><dd>look around</dd>
+    <dt><kbd>Click</kbd></dt><dd>capture the mouse to aim</dd>
+    <dt><kbd>Hold click</kbd></dt><dd>charge the throw</dd>
+    <dt><kbd>Release</kbd></dt><dd>throw the ball</dd>
+    <dt><kbd>Esc</kbd></dt><dd>free the mouse</dd>
     <dt><kbd>WASD</kbd></dt><dd>move</dd>
     <dt><kbd>R</kbd></dt><dd>reset cans</dd>
     <dt><kbd>M</kbd></dt><dd>menu</dd>
@@ -121,7 +135,7 @@
   // If the 3D libraries never arrive (blocked CDN, no network), say so instead of showing a blank screen.
   setTimeout(function () {
     var b = document.getElementById('boot');
-    if (b && !b.classList.contains('done')) document.getElementById('bootText').textContent = 'Still loading. Check your connection (cdn.jsdelivr.net must be reachable)';
+    if (b && !b.classList.contains('done')) document.getElementById('bootText').textContent = 'Still loading… check your connection (cdn.jsdelivr.net must be reachable)';
   }, 12000);
 </script>
 
@@ -131,6 +145,7 @@ import * as CANNON from 'cannon-es';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Real-world sizes (metres / kg): softball, standard 12 oz soda can, carnival counter height.
 const BALL_RADIUS = 0.048;          // 9.6 cm softball
@@ -143,28 +158,26 @@ const CAN_MASS = 0.1;               // weighted a little so a softball moves the
 const THROW_ASSIST = 1.6;           // release speed multiplier: a relaxed flick carries a full throw
 const MAX_THROW_SPEED = 18;         // m/s
 
-// ---------- three vertex look: design-system tokens (dark theme) + fonts for the canvas-drawn UI ----------
-// Values mirror the design system (project/tokens.json v0.1.0). Game-first: they style menus, panels, the scoreboard
-// and hints; the booth, cans and ball keep their own carnival colours. Brand rules kept here: flat colour, one orange,
-// square edges (4px max), hairlines instead of shadows, no red (states use words and glyphs).
-const TV = { orange: '#ff9d55', navy: '#0b1c28', raised: '#13293a', highlight: '#1e3a50', heading: '#ffffff', ink: '#f2f5f7',
-             muted: '#a3b1bd', line: '#24405a', lineStrong: '#7d98ae', onAccent: '#1f4260' };
-const FONT_SANS = 'Lexend, "Segoe UI", Calibri, system-ui, sans-serif';
-const FONT_MONO = '"IBM Plex Mono", Consolas, "SF Mono", monospace';
+// ---------- interface look: warm and friendly (cream cards, wood-brown edges, coral and sunshine accents) ----------
+// Palette from the Claude Design scene. Used for the in-VR menus, hint cards and result card.
+const UI = { bg: '#fff6e6', card: '#ffffff', heading: '#3a2f2b', ink: '#3a2f2b', muted: '#7a6a60', line: '#e8d8bf', lineStrong: '#c9b08a',
+             wood: '#a8673a', accent: '#ff6f61', accentDeep: '#c4452f', sun: '#ffc93c', teal: '#2fbfb0', onAccent: '#3a2f2b', bannerEdge: '#7a3b2e' };
+const FONT_SANS = 'Fredoka, "Segoe UI", system-ui, sans-serif';
+const FONT_MONO = FONT_SANS; // small labels use the same rounded face, spaced out
 const fnt = (weight, px, mono = false) => `${weight} ${px}px ${mono ? FONT_MONO : FONT_SANS}`;
 
-// Canvases that carry text are drawn once with fallback fonts and redrawn when Lexend / IBM Plex Mono arrive.
+// Canvases that carry text are drawn once with fallback fonts and redrawn when the web fonts arrive.
 const fontRedraws = [];
 const onFontsReady = (fn) => { fontRedraws.push(fn); };
 if (document.fonts && document.fonts.load) {
-  Promise.all(['300 16px Lexend', '400 16px Lexend', '600 16px Lexend', '700 16px Lexend', '500 14px "IBM Plex Mono"']
+  Promise.all(['400 16px Fredoka', '500 16px Fredoka', '600 16px Fredoka', '700 16px Fredoka', '400 16px "Gochi Hand"']
     .map(f => document.fonts.load(f))).then(() => fontRedraws.forEach(fn => fn())).catch(() => {});
 }
-function drawText(g, s, x, y, { font, color, align = 'left', ls = 0 }) {
+function drawText(g, s, x, y, { font, color, align = 'left', ls = 0, maxW }) {
   g.font = font; g.fillStyle = color; g.textAlign = align; g.textBaseline = 'middle';
   const spaced = ls && 'letterSpacing' in g;
   if (spaced) g.letterSpacing = `${ls}px`;
-  g.fillText(s, x, y);
+  if (maxW) g.fillText(s, x, y, maxW); else g.fillText(s, x, y);
   if (spaced) g.letterSpacing = '0px';
 }
 function wrapText(g, s, x, y, maxW, lh, opts) { // returns the number of lines drawn
@@ -178,6 +191,11 @@ function wrapText(g, s, x, y, maxW, lh, opts) { // returns the number of lines d
   lines.forEach((l, i) => drawText(g, l, x, y + i * lh, opts));
   return lines.length;
 }
+// The 3D world (signs, chalkboard, banner) uses the same friendly faces.
+const WORLD_SANS = FONT_SANS;
+const WORLD_HAND = '"Gochi Hand", "Segoe Print", "Comic Sans MS", cursive';
+const wfnt = (weight, px) => `${weight} ${px}px ${WORLD_SANS}`;
+const hfnt = (px) => `400 ${px}px ${WORLD_HAND}`;
 
 // ---------- settings + local leaderboard (localStorage; falls back to memory if storage is blocked) ----------
 const mem = {};
@@ -186,11 +204,12 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { mem[k] = v; } },
 };
 const SETTINGS_KEY = 'cantoss.settings', BOARD_KEY = 'cantoss.leaderboard.v1';
-const MIN_ROWS = 3, MAX_ROWS = 6, BOARD_SIZE = 10;
-const settings = Object.assign({ rows: 4, quality: 'high', tutorialDone: false, name: 'AAA' }, store.get(SETTINGS_KEY, {}));
+const MIN_ROWS = 3, MAX_ROWS = 6, BOARD_SIZE = 10, MAX_NAME = 8;
+const settings = Object.assign({ rows: 4, quality: 'high', tutorialDone: false, name: 'AAA', pointerLock: true }, store.get(SETTINGS_KEY, {}));
 settings.rows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, Math.round(+settings.rows) || 4));
 if (settings.quality !== 'low') settings.quality = 'high';
-settings.name = String(settings.name || 'AAA').toUpperCase().replace(/[^A-Z]/g, '').padEnd(3, 'A').slice(0, 3);
+settings.name = String(settings.name || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, MAX_NAME) || 'AAA';
+settings.pointerLock = settings.pointerLock !== false;
 const saveSettings = () => store.set(SETTINGS_KEY, settings);
 const canCount = (rows) => rows * (rows + 1) / 2;
 
@@ -208,7 +227,7 @@ function sanitizeEntry(e) { // also used for imported files, so be strict
   const rows = Math.round(+e.rows), points = Math.round(+e.points), throws = Math.round(+e.throws), time = +e.time;
   if (!(rows >= MIN_ROWS && rows <= MAX_ROWS) || !(points >= 0 && points < 1e6)
       || !(throws >= 1 && throws < 1e4) || !(time >= 0 && time < 1e5)) return null;
-  const name = String(e.name ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3) || '???';
+  const name = String(e.name ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, MAX_NAME) || '???';
   return { name, rows, cans: canCount(rows), points, throws, time: Math.round(time * 10) / 10,
            date: typeof e.date === 'string' ? e.date.replace(/[^0-9-]/g, '').slice(0, 10) : '' };
 }
@@ -263,31 +282,35 @@ document.body.appendChild(renderer.domElement);
 const vrButton = VRButton.createButton(renderer);
 document.body.appendChild(vrButton);
 // three swaps the label to "VR NOT SUPPORTED" when there is no headset; style that state as inactive
-new MutationObserver(() => vrButton.classList.toggle('tv-off', /NOT/i.test(vrButton.textContent)))
+new MutationObserver(() => vrButton.classList.toggle('vr-off', /NOT/i.test(vrButton.textContent)))
   .observe(vrButton, { childList: true, characterData: true, subtree: true });
-vrButton.classList.toggle('tv-off', /NOT/i.test(vrButton.textContent));
+vrButton.classList.toggle('vr-off', /NOT/i.test(vrButton.textContent));
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xbfe3ff);
-scene.fog = new THREE.Fog(0xbfe3ff, 25, 90);
+scene.background = new THREE.Color(0xd6ecf7);
+scene.fog = new THREE.Fog(0xd6ecf7, 40, 160);
 // reflections for the metal cans (generated in code, no downloads)
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-scene.add(new THREE.HemisphereLight(0xdff1ff, 0x5a7a40, 0.9));
-const sun = new THREE.DirectionalLight(0xfff1d6, 2.2);
-sun.position.set(-3, 6, 2);
+// daylight from the Claude Design scene: bright sky wash, warm sun, a cool fill
+scene.add(new THREE.HemisphereLight(0xdff0ff, 0x6a7a40, 1.25));
+const fillLight = new THREE.DirectionalLight(0xcfe0ff, 0.5);
+fillLight.position.set(-5, 3, -4);
+scene.add(fillLight);
+const sun = new THREE.DirectionalLight(0xfff4e0, 2.4);
+sun.position.set(7, 12, 6);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4, near: 0.5, far: 20 });
+Object.assign(sun.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8, near: 0.5, far: 40 });
 sun.shadow.bias = -0.0005;
-sun.shadow.normalBias = 0.01;
-sun.target.position.set(0, 0.5, -3);
+sun.shadow.normalBias = 0.02;
+sun.target.position.set(0, 0.5, -2.5);
 scene.add(sun, sun.target);
 
 // The rig moves the player; in VR the headset pose is applied to the camera inside it.
 const rig = new THREE.Group();
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 200);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 400);
 camera.position.set(0, 1.6, 0);
 camera.rotation.order = 'YXZ';
 rig.add(camera);
@@ -314,16 +337,16 @@ function canvasTex(w, h, draw, repeat, hasText = false) {
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 const grassTex = canvasTex(512, 512, (g, w, h) => {
-  g.fillStyle = '#4f8a3e'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#6fae4a'; g.fillRect(0, 0, w, h);
   for (let i = 0; i < 9000; i++) {
-    g.strokeStyle = `hsl(${rnd(85, 110)},${rnd(35, 55)}%,${rnd(22, 40)}%)`;
+    g.strokeStyle = `hsl(${rnd(88, 108)},${rnd(38, 55)}%,${rnd(32, 50)}%)`;
     const x = rnd(0, w), y = rnd(0, h);
     g.beginPath(); g.moveTo(x, y); g.lineTo(x + rnd(-2, 2), y - rnd(3, 8)); g.stroke();
   }
-}, [24, 36]);
+}, [72, 72]);
 
 const woodTex = canvasTex(512, 256, (g, w, h) => {
-  g.fillStyle = '#9a6a38'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#a8673a'; g.fillRect(0, 0, w, h);
   for (let i = 0; i < 160; i++) {
     g.strokeStyle = `rgba(${rnd(60, 90)},${rnd(35, 50)},${rnd(15, 25)},${rnd(0.1, 0.35)})`;
     g.lineWidth = rnd(0.5, 2.5);
@@ -334,27 +357,9 @@ const woodTex = canvasTex(512, 256, (g, w, h) => {
   }
 });
 
-function stripeTex(c1, c2, n, repeat) {
-  return canvasTex(256, 64, (g, w, h) => {
-    for (let i = 0; i < n; i++) { g.fillStyle = i % 2 ? c2 : c1; g.fillRect(i * w / n, 0, w / n + 1, h); }
-  }, repeat);
-}
-
-function canTex(base, accent, name) {
-  return canvasTex(512, 256, (g, w, h) => {
-    g.fillStyle = base; g.fillRect(0, 0, w, h);
-    g.fillStyle = accent; g.fillRect(0, h * 0.38, w, h * 0.24);
-    g.fillStyle = '#d9dde0'; g.fillRect(0, 0, w, h * 0.1); g.fillRect(0, h * 0.9, w, h * 0.1);
-    g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(w * 0.08, 0, w * 0.04, h); // highlight
-    g.fillStyle = base === '#c0392b' ? '#fff' : '#1b2a6b';
-    g.font = fnt(700, 52); g.textAlign = 'center'; g.textBaseline = 'middle';
-    for (const u of [0.25, 0.75]) g.fillText(name, w * u, h * 0.5);
-  }, null, true);
-}
-
 const ballTex = canvasTex(512, 256, (g, w, h) => {
-  g.fillStyle = '#d6e64a'; g.fillRect(0, 0, w, h);
-  g.strokeStyle = '#c0392b'; g.lineWidth = 3;
+  g.fillStyle = '#d9e04a'; g.fillRect(0, 0, w, h);
+  g.strokeStyle = '#e5584a'; g.lineWidth = 3;
   for (const ph of [0, Math.PI]) {
     g.beginPath();
     for (let x = 0; x <= w; x += 4) {
@@ -371,26 +376,20 @@ const ballTex = canvasTex(512, 256, (g, w, h) => {
   }
 });
 
-const signTex = (text, bg, fg, w = 512, h = 128) => canvasTex(w, h, (g) => {
-  g.fillStyle = bg; g.fillRect(0, 0, w, h);
-  g.strokeStyle = fg; g.lineWidth = 6; g.strokeRect(6, 6, w - 12, h - 12);
-  g.fillStyle = fg; g.font = fnt(700, h * 0.52); g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText(text, w / 2, h / 2 + 4);
-}, null, true);
-
 const std = (opts) => new THREE.MeshStandardMaterial({ envMapIntensity: 0.35, ...opts });
 
-// sky dome with a gradient (a background texture would be screen-locked in VR)
-const sky = new THREE.Mesh(
-  new THREE.SphereGeometry(150, 24, 16),
-  new THREE.MeshBasicMaterial({
-    side: THREE.BackSide, fog: false,
-    map: canvasTex(8, 256, (g, w, h) => {
-      const gr = g.createLinearGradient(0, 0, 0, h);
-      gr.addColorStop(0, '#2f6fc4'); gr.addColorStop(0.5, '#8fc3f0'); gr.addColorStop(1, '#dcefff');
-      g.fillStyle = gr; g.fillRect(0, 0, w, h);
-    }),
-  }));
+// sky dome, vertex-coloured from the design (a background texture would be screen-locked in VR)
+const sky = (() => {
+  const geo = new THREE.SphereGeometry(180, 32, 16), pos = geo.attributes.position, cols = [];
+  const top = new THREE.Color(0x3f9de0), mid = new THREE.Color(0x9fd3f0), hz = new THREE.Color(0xe6f4fb), c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const h = pos.getY(i) / 180;
+    if (h < 0) c.copy(hz); else if (h < 0.18) c.lerpColors(hz, mid, h / 0.18); else c.lerpColors(mid, top, Math.min(1, (h - 0.18) / 0.5));
+    cols.push(c.r, c.g, c.b);
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false }));
+})();
 scene.add(sky);
 
 // ---------- physics ----------
@@ -438,8 +437,10 @@ function ensureAudio() {
 }
 function unlockAudio() { const c = ensureAudio(); if (c && c.state !== 'running') c.resume().catch(() => {}); }
 for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.addEventListener(ev, unlockAudio);
+renderer.xr.addEventListener('sessionend', () => { panel.drawnKey = ''; bump(); });
 renderer.xr.addEventListener('sessionstart', () => {
   unlockAudio();
+  panel.drawnKey = ''; bump();
   setTimeout(() => { if (panel.open) placePanel(); }, 800); // re-place the first-run card once the headset pose is known
 });
 
@@ -565,120 +566,305 @@ function onCollide(self) {
   };
 }
 
-// ---------- the booth ----------
-function addStaticBox(w, h, d, x, y, z, materials, kind = 'wood') {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), materials);
-  mesh.position.set(x, y, z);
-  mesh.castShadow = mesh.receiveShadow = true;
-  scene.add(mesh);
-  const body = new CANNON.Body({ mass: 0, material: M.wood, shape: new CANNON.Box(new CANNON.Vec3(w / 2, h / 2, d / 2)) });
-  body.kind = kind;
-  body.position.set(x, y, z);
-  world.addBody(body);
-  return { mesh, body };
+// ---------- the booth: friendly carnival look ported from the Claude Design scene (CanToss Scene v3) ----------
+// Visual layer only. The colliders below keep the real-world sizes the game plays with
+// (counter top 0.9 m, can table at z = -4, ball stand at z = -0.8); the booth is built around them.
+const BOOTH_Z = -3.45;                                  // booth centre: its back wall sits just behind the can table
+const CORAL = 0xff6f61, SUNSHINE = 0xffc93c, TEAL = 0x2fbfb0, LILAC = 0xa58be0, CREAM = 0xfff6e6;
+const dm = (color, rough, metal = 0, extra = {}) => std({ color, roughness: rough, metalness: metal, ...extra });
+const mat = {
+  woodA: dm(0xd9a76e, 0.78), woodB: dm(0xc48f58, 0.82), woodTop: dm(0xa8673a, 0.45),
+  coral: dm(CORAL, 0.9, 0, { side: THREE.DoubleSide }), cream: dm(CREAM, 0.9, 0, { side: THREE.DoubleSide }),
+  teal: dm(TEAL, 0.9, 0, { side: THREE.DoubleSide }), sunshine: dm(SUNSHINE, 0.9, 0, { side: THREE.DoubleSide }),
+  lilac: dm(LILAC, 0.9, 0, { side: THREE.DoubleSide }),
+  iron: dm(0x3d4a55, 0.6, 0.3), rope: dm(0xc9b48a, 1),
+  bulb: std({ color: 0xfff1c9, roughness: 0.3, emissive: 0xffc56b, emissiveIntensity: 0.9 }),
+  grass: std({ map: grassTex, roughness: 1, envMapIntensity: 0.15 }),
+  dirt: dm(0xd8bf8e, 1),
+  rubber: dm(0x2a6f8f, 0.9), hay: dm(0xc9a85a, 1), tree: dm(0x4f9a4a, 1), bark: dm(0x4a3626, 1), wheel: dm(0xe8e2d6, 0.5, 0.3),
+  tin: dm(0xd6d9dc, 0.32, 0.5, { envMapIntensity: 0.9 }),
+  labelCoral: dm(CORAL, 0.45), labelTeal: dm(TEAL, 0.45), labelSun: dm(SUNSHINE, 0.45),
+};
+let seed = 7;
+const srnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647; // seeded, so the scenery is the same every visit
+
+const decor = new THREE.Group(), boothG = new THREE.Group(), scenery = new THREE.Group(), treesG = new THREE.Group();
+decor.name = 'decor'; boothG.name = 'booth'; scenery.name = 'scenery'; treesG.name = 'trees';
+boothG.position.set(0, 0, BOOTH_Z);
+scene.add(decor, boothG, scenery, treesG);
+
+const add = (name, geo, m, x, y, z, parent = decor) => {
+  const mesh = new THREE.Mesh(geo, m); mesh.name = name; mesh.position.set(x, y, z);
+  mesh.castShadow = mesh.receiveShadow = true; parent.add(mesh); return mesh;
+};
+
+// One draw call per material instead of hundreds of small meshes: merge everything that never moves.
+function mergeStatic(root) {
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const buckets = new Map(), drop = [];
+  root.traverse((o) => {
+    if (!o.isMesh || o.userData.keep) return;
+    const key = o.material, list = buckets.get(key) || { cast: new Map() };
+    const sub = list.cast.get(o.castShadow) || [];
+    sub.push(o.geometry.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)));
+    list.cast.set(o.castShadow, sub); buckets.set(key, list); drop.push(o);
+  });
+  drop.forEach(o => o.parent.remove(o));
+  for (const [m, { cast }] of buckets) for (const [castShadow, geos] of cast) {
+    const merged = mergeGeometries(geos);
+    geos.forEach(g => g.dispose());
+    if (!merged) continue;
+    const mesh = new THREE.Mesh(merged, m); mesh.name = `${root.name}_${m.name || 'merged'}`;
+    mesh.castShadow = castShadow; mesh.receiveShadow = true; root.add(mesh);
+  }
 }
 
-// ground (visual + infinite plane collider)
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 90), std({ map: grassTex, roughness: 1, envMapIntensity: 0.15 }));
-ground.rotation.x = -Math.PI / 2;
-ground.position.set(0, 0, -20);
-ground.receiveShadow = true;
-scene.add(ground);
+// ---------- string lights ----------
+const bulbGeo = new THREE.SphereGeometry(0.024, 10, 6), capGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.02, 6);
+function stringLights(a, b, sagAmt, count, parent = decor) {
+  const P = t => new THREE.Vector3().lerpVectors(a, b, t).add(new THREE.Vector3(0, -sagAmt * Math.sin(Math.PI * t), 0));
+  const pts = []; for (let i = 0; i <= 20; i++) pts.push(P(i / 20));
+  add('wire', new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.004, 4), mat.iron, 0, 0, 0, parent).castShadow = false;
+  for (let i = 1; i < count; i++) {
+    const p = P(i / count);
+    add('cap', capGeo, mat.iron, p.x, p.y - 0.012, p.z, parent).castShadow = false;
+    add('bulb', bulbGeo, mat.bulb, p.x, p.y - 0.038, p.z, parent).castShadow = false;
+  }
+}
+
+// ---------- signs ----------
+function signTexture(text, bg, fg) {
+  return canvasTex(1024, 256, (c) => {
+    c.fillStyle = bg; c.fillRect(0, 0, 1024, 256);
+    c.strokeStyle = fg; c.lineWidth = 12; c.strokeRect(22, 22, 980, 212);
+    c.fillStyle = fg; c.font = wfnt(700, 140); c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(text, 512, 134);
+  }, null, true);
+}
+
+// ---------- a booth (the main one frames the can table; the neighbours show prizes) ----------
+function booth(name, A, B, sign, main, signBg, parent) {
+  const b = new THREE.Group(); b.name = name; parent.add(b);
+  const W = 3.2, D = 2.2, WALL_H = 2.4, xL = -W / 2, zB = -D / 2, zF = D / 2;
+  for (let i = 0; i < 11; i++) { const pd = D / 11; add('deck', new THREE.BoxGeometry(W, 0.06, pd - 0.008), i % 2 ? mat.woodA : mat.woodB, 0, 0.03, zB + pd * (i + 0.5), b); }
+  [[xL + 0.05, zB + 0.05], [-xL - 0.05, zB + 0.05], [xL + 0.05, zF - 0.05], [-xL - 0.05, zF - 0.05]].forEach(([x, z]) => {
+    const h = z < 0 ? 2.75 : 2.55; add('post', new THREE.BoxGeometry(0.1, h, 0.1), mat.woodTop, x, 0.06 + h / 2, z, b);
+  });
+  // walls: a solid lower panel + stripes above
+  add('wall_lower', new THREE.BoxGeometry(W - 0.2, 0.9, 0.025), B, 0, 0.06 + 0.45, zB + 0.03, b);
+  const N = 14, sw = (W - 0.2) / N;
+  for (let i = 0; i < N; i++) add('wall_stripe', new THREE.BoxGeometry(sw + 0.001, WALL_H - 0.9, 0.02), i % 2 ? mat.cream : A, xL + 0.1 + sw * (i + 0.5), 0.96 + (WALL_H - 0.9) / 2, zB + 0.03, b);
+  [-1, 1].forEach(s => add('wall_side', new THREE.BoxGeometry(0.025, WALL_H, D - 0.2), mat.cream, s * (W / 2 - 0.03), 0.06 + WALL_H / 2, 0, b));
+  // striped canopy with a scalloped valance
+  const cZb = zB - 0.05, cZf = zF + 0.25, cYb = 2.82, cYf = 2.6;
+  const run = cZf - cZb, rise = cYb - cYf, L = Math.hypot(run, rise), ang = Math.atan2(rise, run);
+  const CN = 12, cw = (W + 0.2) / CN;
+  for (let i = 0; i < CN; i++) {
+    add('canopy', new THREE.BoxGeometry(cw + 0.001, 0.02, L), i % 2 ? mat.cream : A, -(W + 0.2) / 2 + cw * (i + 0.5), (cYb + cYf) / 2, (cZb + cZf) / 2, b).rotation.x = ang;
+    add('valance', new THREE.CircleGeometry(cw / 2, 16, Math.PI, Math.PI), i % 2 ? A : mat.cream, -(W + 0.2) / 2 + cw * (i + 0.5), cYf - 0.01, cZf + 0.002, b);
+  }
+  add('sign_frame', new THREE.BoxGeometry(1.5, 0.42, 0.05), mat.woodTop, 0, 2.95, cZf - 0.25, b);
+  const face = add('sign_face', new THREE.PlaneGeometry(1.42, 0.355), std({ color: 0xffffff, roughness: 0.6, map: signTexture(sign, signBg, '#FFFFFF') }), 0, 2.95, cZf - 0.224, b);
+  face.userData.keep = true;
+  // front counter
+  const CW = W - 0.1, CH = 1.0, cz = zF - 0.2, SL = 22, slw = CW / SL;
+  for (let i = 0; i < SL; i++) add('counter_slat', new THREE.BoxGeometry(slw - 0.002, CH - 0.06, 0.025), i % 2 ? mat.woodA : mat.woodB, -CW / 2 + slw * (i + 0.5), 0.06 + (CH - 0.06) / 2, cz + 0.18, b);
+  add('counter_top', new THREE.BoxGeometry(CW + 0.08, 0.05, 0.48), mat.woodTop, 0, 0.06 + CH - 0.025, cz, b);
+  stringLights(new THREE.Vector3(xL + 0.05, 2.52, zF), new THREE.Vector3(-xL - 0.05, 2.52, zF), 0.14, 14, b);
+  if (!main) { // prize shelves for the neighbouring stalls
+    [0.9, 1.5].forEach(y => add('shelf', new THREE.BoxGeometry(2.6, 0.04, 0.3), mat.woodTop, 0, y, zB + 0.22, b));
+    const prizeMats = [mat.coral, mat.sunshine, mat.lilac, mat.teal], prizeGeo = new THREE.SphereGeometry(0.11, 14, 8);
+    for (let i = 0; i < 10; i++) add('prize', prizeGeo, prizeMats[i % 4], -1.1 + (i % 5) * 0.55, (i < 5 ? 0.92 : 1.52) + 0.11, zB + 0.22, b);
+  }
+  return b;
+}
+
+const main = booth('booth_main', mat.coral, mat.teal, 'CAN TOSS', true, '#FF6F61', boothG);
+
+// ---------- the chalk scoreboard, hung from a crossbeam on the back wall ----------
+const boardCanvas = document.createElement('canvas');
+boardCanvas.width = 1024; boardCanvas.height = 400;
+const boardTex = new THREE.CanvasTexture(boardCanvas);
+boardTex.colorSpace = THREE.SRGBColorSpace; boardTex.anisotropy = 8;
+const slateGrain = document.createElement('canvas'); slateGrain.width = 1024; slateGrain.height = 400;
+{
+  const c = slateGrain.getContext('2d'); c.fillStyle = '#2f4a40'; c.fillRect(0, 0, 1024, 400);
+  for (let i = 0; i < 70; i++) {
+    c.strokeStyle = `rgba(255,255,255,${0.015 + srnd() * 0.03})`; c.lineWidth = 20 + srnd() * 60; c.beginPath();
+    const x = srnd() * 1024, y = srnd() * 400; c.moveTo(x, y); c.quadraticCurveTo(x + 80, y - 40 + srnd() * 80, x + 120 + srnd() * 160, y + srnd() * 40 - 20); c.stroke();
+  }
+}
+const score = { down: 0, throws: 0, won: false, t0: null, time: 0 };
+const elapsed = () => score.won ? score.time : score.t0 === null ? 0 : (performance.now() - score.t0) / 1000;
+let lastScoreKey = '';
+const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+function chalk(c, txt, x, y, font, color, align = 'center') {
+  c.font = font; c.textAlign = align; c.textBaseline = 'middle';
+  c.globalAlpha = 0.22; c.fillStyle = color; c.fillText(txt, x + 2, y + 2);
+  c.globalAlpha = 0.95; c.fillText(txt, x, y); c.globalAlpha = 1;
+}
+function drawBoard() {
+  const key = `${score.down}/${cans.length}/${score.throws}/${score.won}/${Math.floor(elapsed())}`;
+  if (key === lastScoreKey) return;
+  lastScoreKey = key;
+  const c = boardCanvas.getContext('2d');
+  c.drawImage(slateGrain, 0, 0);
+  // on a win the board keeps its normal layout (cans down, frozen time, throws): "You win" is shown once, by the banner
+  chalk(c, 'Cans down', 250, 70, hfnt(52), '#f4f1e8');
+  chalk(c, 'Time', 640, 70, hfnt(52), '#f4f1e8');
+  chalk(c, 'Throws', 870, 70, hfnt(52), '#f4f1e8');
+  c.strokeStyle = 'rgba(244,241,232,.55)'; c.lineWidth = 4;
+  [[480, 40, 476, 360], [770, 44, 773, 356]].forEach(([x1, y1, x2, y2]) => { c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); });
+  chalk(c, String(score.down), 250, 238, hfnt(210), '#ffd25e', 'right');
+  chalk(c, '/' + cans.length, 262, 270, hfnt(96), '#f4f1e8', 'left');
+  chalk(c, mmss(elapsed()), 628, 240, hfnt(112), '#f4f1e8');
+  chalk(c, String(score.throws), 870, 240, hfnt(150), '#ff8a7a');
+  boardTex.needsUpdate = true;
+}
+onFontsReady(() => { lastScoreKey = ''; drawBoard(); });
+add('crossbeam', new THREE.BoxGeometry(3.1, 0.1, 0.1), mat.woodTop, 0, 2.62, -1.0, main);
+const sb = new THREE.Group(); sb.name = 'scoreboard'; sb.position.set(0, 2.08, -0.98); sb.rotation.x = -0.06; main.add(sb);
+add('scoreboard_frame', new THREE.BoxGeometry(1.26, 0.52, 0.04), mat.woodA, 0, 0, 0, sb);
+const slate = add('scoreboard_slate', new THREE.PlaneGeometry(1.16, 0.43),
+  std({ color: 0xffffff, roughness: 0.92, map: boardTex, emissive: 0xffffff, emissiveMap: boardTex, emissiveIntensity: 0.12 }), 0, 0.01, 0.021, sb);
+slate.userData.keep = true;
+add('chalk_ledge', new THREE.BoxGeometry(1.2, 0.025, 0.06), mat.woodTop, 0, -0.245, 0.03, sb);
+const chalkG = new THREE.CylinderGeometry(0.006, 0.006, 0.06, 8);
+[[0.3, 0xf4f1e8], [0.36, 0xffd25e], [-0.4, 0xff8a7a]].forEach(([x, col], i) => add('chalk', chalkG, dm(col, 1), x, -0.226, 0.035, sb).rotation.z = Math.PI / 2 + i * 0.3);
+[-0.5, 0.5].forEach(x => {
+  add('rope', new THREE.CylinderGeometry(0.007, 0.007, 0.32, 6), mat.rope, x, 2.44, -0.99, main);
+  add('rope_knot', new THREE.TorusGeometry(0.018, 0.007, 6, 12), mat.rope, x, 2.62, -0.94, main);
+});
+
+// neighbouring stalls
+const left = booth('booth_left', mat.sunshine, mat.lilac, 'RING TOSS', false, '#8A6FD1', scene);
+left.position.set(-4.4, 0, 0.6 + BOOTH_Z); left.rotation.y = 0.32;
+const right = booth('booth_right', mat.teal, mat.sunshine, 'PRIZES', false, '#1FA597', scene);
+right.position.set(4.4, 0, 0.6 + BOOTH_Z); right.rotation.y = -0.32;
+
+// ---------- ground, dirt patch, player mat and throw line ----------
+// built from small triangles: one giant triangle would be mis-sorted against nearby objects by the depth buffer
+const ground = add('ground', new THREE.RingGeometry(8, 90, 64, 16), mat.grass, 0, 0, 0); // grass outside the dirt patch
+ground.rotation.x = -Math.PI / 2; ground.castShadow = false;
+mat.grass.map.repeat.set(72, 72); mat.grass.map.wrapS = mat.grass.map.wrapT = THREE.RepeatWrapping;
+// same level as the grass ring, so nothing overlaps or z-fights
+const dirt = add('dirt', new THREE.RingGeometry(0, 8, 64, 4), mat.dirt, 0, 0, 0);
+dirt.rotation.x = -Math.PI / 2; dirt.castShadow = false;
+add('player_mat', new THREE.BoxGeometry(1.2, 0.02, 0.8), mat.rubber, 0, 0.01, 0);
+add('throw_line', new THREE.BoxGeometry(1.2, 0.006, 0.05), mat.coral, 0, 0.022, -0.38);
 const groundBody = new CANNON.Body({ mass: 0, material: M.grass, shape: new CANNON.Plane() });
 groundBody.kind = 'ground';
 groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
 world.addBody(groundBody);
 
-// counter: wood top, red/white striped front and sides
-const stripes = std({ map: stripeTex('#c0392b', '#f4efe6', 8, [1, 1]), roughness: 0.7 });
-const woodTop = std({ map: woodTex, roughness: 0.6 });
-addStaticBox(1.2, TABLE_TOP, 0.6, 0, TABLE_TOP / 2, -4, [stripes, stripes, woodTop, stripes, stripes, stripes]);
-// ball stand
-const darkWood = std({ map: woodTex, color: 0x6f4a28, roughness: 0.7 });
-addStaticBox(0.8, PEDESTAL_TOP, 0.4, 0, PEDESTAL_TOP / 2, -0.8, [darkWood, darkWood, woodTop, darkWood, darkWood, darkWood]);
-
-// back and side walls, striped awning, sign, bulbs
-const wallMat = (rep) => std({ map: stripeTex('#2e86c1', '#f4efe6', 10, rep), roughness: 0.9, side: THREE.DoubleSide });
-function plane(w, h, mat, x, y, z, rx = 0, ry = 0) {
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
-  m.position.set(x, y, z); m.rotation.set(rx, ry, 0);
-  m.receiveShadow = true; m.castShadow = true;
-  scene.add(m);
-  return m;
+// ---------- colliders (the real play surfaces) ----------
+function addCollider(w, h, d, x, y, z, kind = 'wood') {
+  const body = new CANNON.Body({ mass: 0, material: M.wood, shape: new CANNON.Box(new CANNON.Vec3(w / 2, h / 2, d / 2)) });
+  body.kind = kind; body.position.set(x, y, z);
+  world.addBody(body);
+  return body;
 }
-plane(5.4, 3.2, wallMat([1, 1]), 0, 1.6, -5.2);
-plane(2.2, 3.2, wallMat([0.5, 1]), -2.7, 1.6, -4.1, 0, Math.PI / 2);
-plane(2.2, 3.2, wallMat([0.5, 1]), 2.7, 1.6, -4.1, 0, Math.PI / 2);
-const awning = plane(5.6, 2.3, std({ map: stripeTex('#c0392b', '#f4efe6', 14, [1, 1]), side: THREE.DoubleSide, roughness: 0.8 }),
-  0, 2.85, -4.1, -Math.PI / 2 + 0.28);
-plane(2.4, 0.6, std({ map: signTex('CAN TOSS', '#c0392b', '#ffe9a8'), roughness: 0.6 }), 0, 2.55, -5.18);
-
-const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8 });
-const bulbGeo = new THREE.SphereGeometry(0.04, 12, 8);
-for (let i = 0; i < 13; i++) {
-  const b = new THREE.Mesh(bulbGeo, bulbMat);
-  b.position.set(-2.4 + i * 0.4, 2.52, -3.0);
-  scene.add(b);
+const slatTex = (c1, c2, n) => canvasTex(256, 128, (g, w, h) => {
+  for (let i = 0; i < n; i++) { g.fillStyle = i % 2 ? c2 : c1; g.fillRect(i * w / n, 0, w / n, h); g.fillStyle = 'rgba(60,35,15,0.35)'; g.fillRect(i * w / n, 0, 2, h); }
+});
+const slatMat = std({ map: slatTex('#d9a76e', '#c48f58', 8), roughness: 0.8 });
+const topMat = std({ map: woodTex, roughness: 0.45 });
+function woodBox(w, h, d, x, y, z) { // slatted wooden box with a varnished top, and its collider
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [slatMat, slatMat, topMat, slatMat, slatMat, slatMat]);
+  mesh.position.set(x, y, z); mesh.castShadow = mesh.receiveShadow = true; scene.add(mesh);
+  addCollider(w, h, d, x, y, z);
+  return mesh;
 }
-const warm = new THREE.PointLight(0xffd9a0, 6, 6, 2);
-warm.position.set(0, 2.3, -3.6);
+woodBox(1.2, TABLE_TOP, 0.6, 0, TABLE_TOP / 2, -4);                  // the can table
+woodBox(0.8, PEDESTAL_TOP, 0.4, 0, PEDESTAL_TOP / 2, -0.8);          // the ball stand
+const COUNTER_Z = BOOTH_Z + 0.9, COUNTER_TOP = 1.06, BACKWALL_Z = BOOTH_Z - 1.07;
+addCollider(3.18, COUNTER_TOP, 0.48, 0, COUNTER_TOP / 2, COUNTER_Z);  // booth counter: a low throw bounces off it
+addCollider(3.0, 2.4, 0.06, 0, 1.26, BACKWALL_Z);                      // back wall: a miss bounces back instead of vanishing
+
+// ---------- poles and overhead string lights ----------
+const poles = [[-3, 4.5], [3, 4.5], [-6.5, 1.5], [6.5, 1.5]];
+poles.forEach(([x, z]) => {
+  add('pole', new THREE.CylinderGeometry(0.06, 0.08, 4.2, 10), mat.woodTop, x, 2.1, z);
+  add('pole_cap', new THREE.SphereGeometry(0.09, 12, 6), mat.iron, x, 4.25, z);
+});
+const V = (x, y, z) => new THREE.Vector3(x, y, z), FZ = BOOTH_Z + 1.1;
+stringLights(V(-1.55, 2.6, FZ), V(3, 4.1, 4.5), 0.5, 20);
+stringLights(V(1.55, 2.6, FZ), V(-3, 4.1, 4.5), 0.5, 20);
+stringLights(V(-3, 4.1, 4.5), V(3, 4.1, 4.5), 0.45, 16);
+stringLights(V(-3, 4.1, 4.5), V(-6.5, 4.1, 1.5), 0.4, 12);
+stringLights(V(3, 4.1, 4.5), V(6.5, 4.1, 1.5), 0.4, 12);
+stringLights(V(-6.5, 4.1, 1.5), V(-5.2, 2.6, 0.6 + BOOTH_Z + 1.0), 0.3, 8);
+stringLights(V(6.5, 4.1, 1.5), V(5.2, 2.6, 0.6 + BOOTH_Z + 1.0), 0.3, 8);
+
+// ---------- hay bales ----------
+const bale = new THREE.BoxGeometry(1.0, 0.45, 0.5);
+[[-2.2, 0.225, 0.2, 0.2], [-2.2, 0.675, 0.25, 0.1], [2.3, 0.225, 0.6, -0.3], [-5.5, 0.225, 4.8, 0.8], [5.8, 0.225, 5.2, -0.6]].forEach(([x, y, z, r]) => {
+  add('hay', bale, mat.hay, x, y, z).rotation.y = r;
+});
+
+// ---------- striped tents around the fairground ----------
+function tent(A, x, z, r, h) {
+  const t = new THREE.Group(); t.position.set(x, 0, z); scenery.add(t);
+  const S = 12, wedge = Math.PI * 2 / S;
+  for (let i = 0; i < S; i++) {
+    const m = i % 2 ? mat.cream : A;
+    add('tent_wall', new THREE.CylinderGeometry(r, r, h, 4, 1, true, i * wedge, wedge), m, 0, h / 2, 0, t);
+    add('tent_roof', new THREE.ConeGeometry(r * 1.12, h * 0.9, 4, 1, true, i * wedge, wedge), m, 0, h + h * 0.45, 0, t);
+  }
+  add('flag_pole', new THREE.CylinderGeometry(0.03, 0.03, 0.8, 6), mat.iron, 0, h * 1.9 + 0.4, 0, t);
+  add('flag', new THREE.BoxGeometry(0.4, 0.25, 0.01), A === mat.sunshine ? mat.coral : mat.sunshine, 0.2, h * 1.9 + 0.65, 0, t);
+}
+tent(mat.coral, -13, 3, 2.6, 2.6); tent(mat.lilac, 12, 7, 2.8, 2.8); tent(mat.sunshine, -5, 14, 3.2, 3);
+tent(mat.coral, 7, 16, 2.6, 2.6); tent(mat.teal, -15, -7, 3, 3); tent(mat.sunshine, 15, -9, 2.8, 2.8);
+
+// ---------- ferris wheel (distant landmark) ----------
+const fw = new THREE.Group(); fw.name = 'ferris_wheel'; fw.position.set(-20, 0, -34); fw.rotation.y = 0.45; scene.add(fw);
+const FR = 9, HUB = 11;
+[-0.6, 0.6].forEach((z, k) => {
+  add('rim', new THREE.TorusGeometry(FR, 0.1, 6, 64), mat.wheel, 0, HUB, z, fw);
+  for (let i = 0; i < 8; i++) add('spoke', new THREE.BoxGeometry(0.08, FR * 2, 0.08), mat.wheel, 0, HUB, z, fw).rotation.z = i * Math.PI / 8;
+  [-1, 1].forEach(s => add('leg', new THREE.BoxGeometry(0.45, HUB / Math.cos(0.28) + 0.4, 0.45), mat.cream, s * HUB * Math.tan(0.28) / 2, HUB / 2, z * 1.6, fw).rotation.z = s * 0.28);
+});
+add('hub', new THREE.CylinderGeometry(0.5, 0.5, 1.6, 16), mat.iron, 0, HUB, 0, fw).rotation.x = Math.PI / 2;
+const gond = new THREE.BoxGeometry(1.0, 0.9, 1.0), fBulb = new THREE.SphereGeometry(0.12, 8, 5);
+for (let i = 0; i < 16; i++) {
+  const a = i / 16 * Math.PI * 2;
+  add('gondola', gond, [mat.coral, mat.teal, mat.sunshine, mat.lilac][i % 4], Math.cos(a) * FR, HUB + Math.sin(a) * FR - 0.8, 0, fw);
+}
+for (let i = 0; i < 36; i++) { const a = i / 36 * Math.PI * 2; add('wheel_bulb', fBulb, mat.bulb, Math.cos(a) * FR, HUB + Math.sin(a) * FR, 0.72, fw).castShadow = false; }
+
+// ---------- tree line ----------
+const trunkG = new THREE.CylinderGeometry(0.15, 0.22, 1.6, 6), crownG = new THREE.ConeGeometry(1.6, 4.5, 8);
+for (let i = 0; i < 40; i++) {
+  const a = srnd() * Math.PI * 2, r = 32 + srnd() * 14, x = Math.cos(a) * r, z = Math.sin(a) * r;
+  if (Math.hypot(x + 20, z + 32) < 12) continue;   // keep the ferris wheel clear
+  const s = 0.8 + srnd() * 0.8;
+  add('trunk', trunkG, mat.bark, x, 0.8 * s, z - 2, treesG).scale.setScalar(s);
+  add('crown', crownG, mat.tree, x, (1.6 + 2.25) * s, z - 2, treesG).scale.setScalar(s);
+}
+
+// freeze the scenery into a handful of draw calls
+[decor, boothG, scenery, treesG, fw, left, right].forEach(mergeStatic);
+const farScenery = [fw, treesG]; // hidden on the Low quality setting
+
+// a warm light under the canopy
+const warm = new THREE.PointLight(0xffc27a, 4, 8, 1.6);
+warm.position.set(0, 2.3, BOOTH_Z + 0.8);
 scene.add(warm);
 
-// scoreboard
-const boardCanvas = document.createElement('canvas');
-boardCanvas.width = 512; boardCanvas.height = 160;
-const boardTex = new THREE.CanvasTexture(boardCanvas);
-boardTex.colorSpace = THREE.SRGBColorSpace;
-plane(1.1, 0.34, new THREE.MeshBasicMaterial({ map: boardTex }), 0, 2.03, -5.17);
-const score = { down: 0, throws: 0, won: false, t0: null, time: 0 };
-const elapsed = () => score.won ? score.time : score.t0 === null ? 0 : (performance.now() - score.t0) / 1000;
-let lastScoreKey = '';
-const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
-function drawBoard() {
-  const key = `${score.down}/${cans.length}/${score.throws}/${score.won}/${Math.floor(elapsed())}`;
-  if (key === lastScoreKey) return;
-  lastScoreKey = key;
-  const g = boardCanvas.getContext('2d'), W = 512, H = 160;
-  if (score.won) { // the one big orange field: the win state
-    g.fillStyle = TV.orange; g.fillRect(0, 0, W, H);
-    drawText(g, 'YOU WIN!', W / 2, 62, { font: fnt(700, 66), color: TV.onAccent, align: 'center' });
-    drawText(g, `${mmss(elapsed())}  ·  ${score.throws} ${score.throws === 1 ? 'THROW' : 'THROWS'}`, W / 2, 122,
-      { font: fnt(500, 24, true), color: TV.onAccent, align: 'center', ls: 2 });
-  } else {
-    g.fillStyle = TV.navy; g.fillRect(0, 0, W, H);
-    g.strokeStyle = TV.lineStrong; g.lineWidth = 4; g.strokeRect(2, 2, W - 4, H - 4);
-    g.fillStyle = TV.line; g.fillRect(256, 26, 2, H - 52);
-    drawText(g, 'CANS DOWN', 28, 36, { font: fnt(500, 17, true), color: TV.muted, ls: 2 });
-    const down = String(score.down);
-    drawText(g, down, 28, 100, { font: fnt(700, 72), color: TV.heading });
-    g.font = fnt(700, 72);
-    drawText(g, `/${cans.length}`, 28 + g.measureText(down).width + 6, 112, { font: fnt(400, 34), color: TV.muted });
-    drawText(g, 'TIME', 282, 36, { font: fnt(500, 17, true), color: TV.muted, ls: 2 });
-    drawText(g, mmss(elapsed()), 282, 100, { font: fnt(600, 46), color: TV.ink });
-    drawText(g, 'THROWS', 404, 36, { font: fnt(500, 17, true), color: TV.muted, ls: 2 });
-    drawText(g, String(score.throws), 404, 100, { font: fnt(600, 46), color: TV.ink });
-  }
-  boardTex.needsUpdate = true;
-}
-onFontsReady(() => { lastScoreKey = ''; drawBoard(); });
 function registerThrow() { // called for every real throw (VR release or desktop click)
   score.throws++;
   if (score.t0 === null && !score.won) score.t0 = performance.now();
   if (!settings.tutorialDone) { settings.tutorialDone = true; saveSettings(); if (panel.open && panel.screen === 'controls') closePanel(); }
 }
 
-// throwing line marker
-const ring = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.45, 32), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-ring.rotation.x = -Math.PI / 2;
-ring.position.set(0, 0.01, 0); // where you stand
-scene.add(ring);
-
 // ---------- cans and balls ----------
 const cans = [];
 const balls = [];
 
 function track(mesh, body, list) {
-  mesh.castShadow = mesh.receiveShadow = true;
+  mesh.traverse(o => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
   scene.add(mesh);
   world.addBody(body);
   const item = { mesh, body, heldBy: null };
@@ -697,14 +883,21 @@ function removeItem(item, list) { // geometry and materials are shared, so only 
   list.splice(list.indexOf(item), 1);
 }
 
-const canGeo = new THREE.CylinderGeometry(CAN_R, CAN_R, CAN_H, 32);
-const capMat = std({ color: 0xd5d9dc, metalness: 0.9, roughness: 0.28, envMapIntensity: 1 });
-const canMats = [
-  [std({ map: canTex('#c0392b', '#f4efe6', 'COLA'), metalness: 0.75, roughness: 0.3, envMapIntensity: 1 }), capMat, capMat],
-  [std({ map: canTex('#c8ccd0', '#2e86c1', 'SODA'), metalness: 0.85, roughness: 0.28, envMapIntensity: 1 }), capMat, capMat],
-];
+// Can model from the design (lathe body, label band, rim), scaled to the real can size (6.6 x 12.2 cm).
+const KX = CAN_R / 0.05, KY = CAN_H / 0.15;
+const canBodyGeo = new THREE.LatheGeometry([[0, 0], [0.036, 0], [0.046, 0.004], [0.049, 0.01], [0.05, 0.016], [0.05, 0.134], [0.049, 0.14], [0.046, 0.146], [0.044, 0.15], [0, 0.15]]
+  .map(([x, y]) => new THREE.Vector2(x * KX, (y - 0.075) * KY)), 32);
+const canLabelGeo = new THREE.CylinderGeometry(CAN_R * 1.024, CAN_R * 1.024, 0.1 * KY, 32, 1, true);
+const canRimGeo = new THREE.TorusGeometry(0.045 * KX, 0.003 * KX, 6, 32);
+canRimGeo.rotateX(Math.PI / 2); canRimGeo.translate(0, (0.15 - 0.002 - 0.075) * KY, 0);
+const canLabelMats = [mat.labelCoral, mat.labelTeal, mat.labelSun];
+function canMesh(i) {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(canBodyGeo, mat.tin), new THREE.Mesh(canLabelGeo, canLabelMats[i % 3]), new THREE.Mesh(canRimGeo, mat.tin));
+  return g;
+}
 function makeCan(x, y, z, i) {
-  const mesh = new THREE.Mesh(canGeo, canMats[i % 2]);
+  const mesh = canMesh(i);
   // Box collider slightly inside the visual cylinder: cannon's cylinder contacts jitter,
   // which makes stacked cans creep and topple on their own.
   const he = CAN_R * 0.97;
@@ -741,6 +934,7 @@ const SLOT_POS = [0, 1, 2, 3].map(i => [(i - 1.5) * 0.15, PEDESTAL_TOP + BALL_RA
 const slots = [null, null, null, null];
 const refillQueue = []; // { slot, at }
 const MAX_LOOSE_BALLS = 10;
+const tuning = { ballLifetime: 5, ballFade: 0.8 }; // seconds a stray ball lingers before it shrinks away, and how long that takes
 
 function fillSlot(i) {
   const b = makeBall(...SLOT_POS[i]);
@@ -767,6 +961,19 @@ function updateRefills() {
   // keep memory bounded: drop the oldest loose balls
   const loose = balls.filter(b => b.slot === null && !b.heldBy);
   if (loose.length > MAX_LOOSE_BALLS) removeItem(loose[0], balls);
+}
+
+// A ball you have thrown is cleared away a few seconds after it comes to rest (or lies on the floor): it shrinks and is removed.
+function updateLooseBalls(dt) {
+  for (const b of balls.slice()) {
+    if (b.slot !== null || b.heldBy) { b.idleT = 0; b.fadeT = 0; if (b.mesh.scale.x !== 1) b.mesh.scale.setScalar(1); continue; }
+    const speed = b.body.velocity.length(), onFloor = b.body.position.y < 0.15;
+    if (speed < 0.4 || onFloor) b.idleT = (b.idleT || 0) + dt; else b.idleT = 0;
+    if (b.idleT < tuning.ballLifetime) continue;
+    b.fadeT = (b.fadeT || 0) + dt;
+    const k = 1 - b.fadeT / tuning.ballFade;
+    if (k <= 0) removeItem(b, balls); else b.mesh.scale.setScalar(Math.max(0.001, k));
+  }
 }
 
 // Triangle pyramid with settings.rows rows (3..6 => 6, 10, 15 or 21 cans): every can sits centred on the two below it.
@@ -843,13 +1050,13 @@ function tipTexture(lines) {
   const w = 420, rowH = 46, h = 32 + lines.length * rowH;
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d');
-  g.beginPath(); g.roundRect(1, 1, w - 2, h - 2, 4); g.fillStyle = TV.raised; g.fill();
-  g.strokeStyle = TV.lineStrong; g.lineWidth = 2; g.stroke();
+  g.beginPath(); g.roundRect(2, 2, w - 4, h - 4, 22); g.fillStyle = UI.bg; g.fill();
+  g.strokeStyle = UI.wood; g.lineWidth = 4; g.stroke();
   lines.forEach(([key, text], i) => {
     const y = 16 + i * rowH + rowH / 2;
-    g.beginPath(); g.arc(28, y, 5, 0, Math.PI * 2); g.fillStyle = TV.orange; g.fill(); // node dot
-    drawText(g, key, 46, y, { font: fnt(500, 21, true), color: TV.orange, ls: 1 });
-    drawText(g, text, 190, y, { font: fnt(400, 24), color: TV.ink });
+    g.beginPath(); g.arc(30, y, 6, 0, Math.PI * 2); g.fillStyle = UI.accent; g.fill();
+    drawText(g, key, 48, y, { font: fnt(600, 21, true), color: UI.accentDeep, ls: 0.5 });
+    drawText(g, text, 196, y, { font: fnt(500, 24), color: UI.ink });
   });
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return { tex: t, aspect: w / h };
@@ -861,7 +1068,7 @@ const TIPS = {
 function makeTip(hand) { // a small hint card above the controller; only fades in when held up to your face
   if (hand.tip) { hand.ctrl.remove(hand.tip); hand.tip.material.map.dispose(); }
   const { tex, aspect } = tipTexture(TIPS[hand.handedness] || TIPS.right);
-  hand.tip = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 }));
+  hand.tip = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0, toneMapped: false }));
   hand.tip.visible = false;
   hand.tip.scale.set(0.2 * aspect, 0.2, 1);
   hand.tip.position.set(0, 0.17, 0.03); // floats above the controller, clear of its buttons
@@ -1000,13 +1207,13 @@ panelTex.colorSpace = THREE.SRGBColorSpace;
 panelTex.anisotropy = 4;
 const menuMesh = new THREE.Mesh(
   new THREE.PlaneGeometry(0.5, 0.5 * PANEL_H / PANEL_W),
-  new THREE.MeshBasicMaterial({ map: panelTex, transparent: true, depthTest: false }));
+  new THREE.MeshBasicMaterial({ map: panelTex, transparent: true, depthTest: false, toneMapped: false }));  // flat UI: no tone mapping, so cream stays cream
 menuMesh.renderOrder = 10;
 menuMesh.visible = false;
 scene.add(menuMesh);
 
 const panel = { open: false, screen: 'main', rev: 0, drawnKey: '', buttons: [], status: '', mouseHover: -1,
-                viewRows: settings.rows, result: null, name: settings.name.split('') };
+                viewRows: settings.rows, result: null, showScoring: false, typed: '' }; // typed with the keyboard, or the on-screen keys in VR (up to MAX_NAME)
 const bump = () => { panel.rev++; panel.buttons = screenButtons(); }; // buttons are rebuilt right away, not on the next frame
 
 function placePanel() { // about 1 m in front of where you are looking, turned toward you
@@ -1019,6 +1226,8 @@ function placePanel() { // about 1 m in front of where you are looking, turned t
   menuMesh.updateMatrixWorld(true);
 }
 function openPanel(screen = 'main') {
+  if (document.pointerLockElement) document.exitPointerLock(); // the mouse is needed to click the panel
+  if (screen === 'result') panel.typed = '';
   panel.screen = screen; panel.open = true; menuMesh.visible = true;
   placePanel(); bump(); play('click', null, 0.7);
 }
@@ -1041,7 +1250,7 @@ function screenButtons() {
     btn(156, 'Refill Balls', () => spawnBalls(), { right: 'Y' }),
     { id: 'minus', x: 36, y: 228, w: 70, h: 60, label: '−', action: () => setRows(settings.rows - 1), disabled: settings.rows <= MIN_ROWS, center: true },
     { id: 'plus', x: 406, y: 228, w: 70, h: 60, label: '+', action: () => setRows(settings.rows + 1), disabled: settings.rows >= MAX_ROWS, center: true },
-    btn(300, 'Leaderboard', () => { panel.viewRows = settings.rows; showScreen('board'); }),
+    btn(300, 'Leaderboard', () => { panel.viewRows = settings.rows; panel.showScoring = false; showScreen('board'); }),
     btn(372, `Quality: ${settings.quality === 'high' ? 'High' : 'Low (faster)'}`, () => setQuality(settings.quality === 'high' ? 'low' : 'high')),
     btn(444, 'Controls', () => showScreen('controls')),
     btn(516, 'Quit VR', () => quitVR(), { right: 'B hold' }),
@@ -1051,34 +1260,53 @@ function screenButtons() {
   if (sc === 'board') return [
     { id: 'prev', x: 36, y: 80, w: 70, h: 56, label: '◀', action: () => { panel.viewRows = Math.max(MIN_ROWS, panel.viewRows - 1); bump(); }, disabled: panel.viewRows <= MIN_ROWS, center: true },
     { id: 'next', x: 406, y: 80, w: 70, h: 56, label: '▶', action: () => { panel.viewRows = Math.min(MAX_ROWS, panel.viewRows + 1); bump(); }, disabled: panel.viewRows >= MAX_ROWS, center: true },
+    { id: 'how', x: 36, y: 600, w: 440, h: 38, small: true, label: panel.showScoring ? 'Back to scores' : 'How scoring works', action: () => { panel.showScoring = !panel.showScoring; bump(); } },
     btn(642, 'Back', () => showScreen('main'), { h: 56 }),
   ];
   if (sc === 'result') {
     const res = panel.result, out = [];
-    const canSave = res && !res.saved && res.rank <= BOARD_SIZE;
-    if (canSave) {
-      [0, 1, 2].forEach(i => {
-        const x = 128 + i * 90;
-        out.push({ id: `up${i}`, x, y: 322, w: 70, h: 44, label: '▲', center: true, action: () => cycleName(i, 1) });
-        out.push({ id: `dn${i}`, x, y: 430, w: 70, h: 44, label: '▼', center: true, action: () => cycleName(i, -1) });
+    const canSave = res && !res.saved && res.rank <= BOARD_SIZE, vr = renderer.xr.isPresenting;
+    if (canSave && vr) { // no keyboard in a headset: an on-screen one, pointed at with the controller
+      ['1234567890', 'QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'].forEach((row, ri) => {
+        const total = row.length * 44 - 4 + (ri === 3 ? 66 : 0), x0 = Math.round((PANEL_W - total) / 2), y = 364 + ri * 46;
+        [...row].forEach((ch, i) => out.push({ id: `key_${ch}`, x: x0 + i * 44, y, w: 40, h: 40, label: ch, center: true, key: true, action: () => typeKey(ch) }));
+        if (ri === 3) out.push({ id: 'key_DEL', x: x0 + row.length * 44, y, w: 62, h: 40, label: 'DEL', center: true, key: true, small: true, action: () => typeKey('DEL') });
       });
-      out.push(btn(504, 'Save score', () => saveResult(), { id: 'save', primary: true }));
+      out.push(btn(554, 'Save score', () => saveResult(), { id: 'save', primary: true, h: 52 }));
+      out.push({ id: 'again', x: 36, y: 614, w: 214, h: 52, label: 'Play Again', action: () => resetCans() });
+      out.push({ id: 'close', x: 262, y: 614, w: 214, h: 52, label: 'Close', action: () => closePanel() });
+      return out;
     }
+    if (canSave) out.push(btn(504, 'Save score', () => saveResult(), { id: 'save', primary: true }));
     out.push(btn(canSave ? 574 : 504, 'Play Again', () => resetCans(), { primary: !canSave }));
     out.push(btn(canSave ? 644 : 574, res && res.saved ? 'Leaderboard' : 'Close', () => (res && res.saved ? (panel.viewRows = settings.rows, showScreen('board')) : closePanel()), { h: 56 }));
     return out;
   }
   return [];
 }
-function cycleName(i, d) {
-  const c = panel.name[i].charCodeAt(0) - 65;
-  panel.name[i] = String.fromCharCode(65 + ((c + d + 26) % 26));
+function typeKey(ch) { // from the keyboard or the on-screen keys
+  if (ch === 'DEL') panel.typed = panel.typed.slice(0, -1);
+  else if (panel.typed.length < MAX_NAME) panel.typed += ch;
   bump();
+}
+function typingName() { // the result card is waiting for a name
+  return panel.open && panel.screen === 'result' && !!panel.result && !panel.result.saved
+    && panel.result.rank <= BOARD_SIZE;
+}
+function nameKey(e) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === 'Enter') { e.preventDefault(); saveResult(); return; }
+  if (e.key === 'Backspace') { e.preventDefault(); panel.typed = panel.typed.slice(0, -1); bump(); return; }
+  if (/^[a-z0-9]$/i.test(e.key)) {
+    e.preventDefault();
+    if (panel.typed.length < MAX_NAME) { panel.typed += e.key.toUpperCase(); bump(); }
+  } else if (e.key === ' ') e.preventDefault();
 }
 function saveResult() {
   const res = panel.result;
   if (!res || res.saved) return;
-  settings.name = panel.name.join(''); saveSettings();
+  const name = panel.typed || settings.name;
+  settings.name = name.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, MAX_NAME) || 'AAA'; saveSettings();
   addScore({ name: settings.name, rows: res.rows, points: res.points, throws: res.throws, time: res.time });
   res.saved = true;
   play('click', null, 0.9);
@@ -1087,6 +1315,7 @@ function saveResult() {
 function setQuality(q) {
   settings.quality = q; saveSettings();
   sun.castShadow = q === 'high';
+  farScenery.forEach(o => { if (o) o.visible = q === 'high'; }); // Low: skip the ferris wheel and tree line
   renderer.setPixelRatio(q === 'high' ? Math.min(window.devicePixelRatio, 2) : 1);
   renderer.setSize(window.innerWidth, window.innerHeight);
   bump();
@@ -1098,102 +1327,99 @@ function activatePanel(i) {
   b.action();
 }
 
-// ----- drawing (three vertex look: flat navy, hairlines, one orange, square corners) -----
+// ----- drawing (friendly look: cream cards, wood-brown edges, rounded corners, coral and sunshine accents) -----
 function roundRect(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
 function drawButton(g, b, hot) {
-  const lit = hot && !b.disabled, onOrange = (b.primary && !b.disabled) || lit;
-  if (onOrange) {
-    roundRect(g, b.x, b.y, b.w, b.h, 4); g.fillStyle = TV.orange; g.fill();
-    if (b.primary && lit) { g.strokeStyle = TV.navy; g.lineWidth = 3; roundRect(g, b.x + 4, b.y + 4, b.w - 8, b.h - 8, 2); g.stroke(); }
-  } else {
-    roundRect(g, b.x + 1, b.y + 1, b.w - 2, b.h - 2, 4);
-    g.strokeStyle = b.disabled ? TV.line : TV.lineStrong; g.lineWidth = 2; g.stroke();
-  }
-  const text = onOrange ? TV.onAccent : b.disabled ? 'rgba(163,177,189,0.45)' : TV.ink;
-  drawText(g, b.label, b.center ? b.x + b.w / 2 : b.x + 20, b.y + b.h / 2 + 1,
-    { font: fnt(600, b.center ? 32 : 27), color: text, align: b.center ? 'center' : 'left' });
-  if (b.right) drawText(g, b.right.toUpperCase(), b.x + b.w - 16, b.y + b.h / 2 + 1,
-    { font: fnt(500, 15, true), color: onOrange ? TV.onAccent : TV.muted, align: 'right', ls: 1.5 });
+  const lit = hot && !b.disabled, primary = b.primary && !b.disabled, rad = b.key ? 10 : 16;
+  roundRect(g, b.x, b.y, b.w, b.h, rad);
+  g.fillStyle = b.disabled ? UI.line : lit ? (primary ? UI.accent : UI.sun) : primary ? UI.sun : UI.card; g.fill();
+  if (!primary && !lit) { roundRect(g, b.x + 1.5, b.y + 1.5, b.w - 3, b.h - 3, rad); g.strokeStyle = b.disabled ? UI.line : UI.lineStrong; g.lineWidth = 3; g.stroke(); }
+  if (b.disabled) g.globalAlpha = 0.5;
+  drawText(g, b.label, b.center ? b.x + b.w / 2 : b.x + 22, b.y + b.h / 2 + 1,
+    { font: fnt(600, b.key ? (b.small ? 15 : 22) : b.small ? 19 : b.center ? 32 : 27), color: UI.ink, align: b.center ? 'center' : 'left' });
+  if (b.right) drawText(g, b.right, b.x + b.w - 18, b.y + b.h / 2 + 1,
+    { font: fnt(500, 16, true), color: lit || primary ? UI.ink : UI.muted, align: 'right' });
+  g.globalAlpha = 1;
 }
 function drawPanel() {
   const hovers = [...hands.map(h => h.hover), panel.mouseHover].join(',');
-  const key = `${panel.screen}|${panel.rev}|${hovers}|${panel.status}`;
+  const caret = typingName() ? Math.floor(performance.now() / 500) % 2 : 0;
+  const key = `${panel.screen}|${panel.rev}|${hovers}|${panel.status}|${caret}`;
   if (key === panel.drawnKey) return;
   panel.drawnKey = key;
   panel.buttons = screenButtons();
   const g = panelCanvas.getContext('2d');
   g.clearRect(0, 0, PANEL_W, PANEL_H);
-  g.fillStyle = TV.navy; g.fillRect(0, 0, PANEL_W, PANEL_H);
-  g.strokeStyle = TV.lineStrong; g.lineWidth = 4; g.strokeRect(2, 2, PANEL_W - 4, PANEL_H - 4);
+  roundRect(g, 3, 3, PANEL_W - 6, PANEL_H - 6, 30); g.fillStyle = UI.bg; g.fill(); // cream card with a wood-brown edge
+  g.strokeStyle = UI.wood; g.lineWidth = 6; g.stroke();
   const title = (t, y = 44) => { // node dot + heading, left aligned
-    g.beginPath(); g.arc(48, y, 7, 0, Math.PI * 2); g.fillStyle = TV.orange; g.fill();
-    drawText(g, t, 68, y, { font: fnt(700, 32), color: TV.heading });
+    g.beginPath(); g.arc(48, y, 8, 0, Math.PI * 2); g.fillStyle = UI.accent; g.fill();
+    drawText(g, t, 68, y, { font: fnt(700, 32), color: UI.heading });
   };
-  const label = (t, x, y, o = {}) => drawText(g, t, x, y, { font: fnt(500, 14, true), color: TV.muted, ls: 2, ...o });
+  const label = (t, x, y, o = {}) => drawText(g, t, x, y, { font: fnt(500, 15, true), color: UI.muted, ls: 1.5, ...o });
   const sc = panel.screen;
 
   if (sc === 'main') {
     title('Can toss');
-    drawText(g, `${settings.rows} rows · ${canCount(settings.rows)} cans`, PANEL_W / 2, 250, { font: fnt(600, 24), color: TV.heading, align: 'center' });
+    drawText(g, `${settings.rows} rows · ${canCount(settings.rows)} cans`, PANEL_W / 2, 250, { font: fnt(600, 24), color: UI.heading, align: 'center' });
     label('PYRAMID SIZE', PANEL_W / 2, 278, { align: 'center' });
-    if (!panel.status) { // brand footer: hairline + lockup
-      g.fillStyle = TV.line; g.fillRect(36, 664, 440, 1);
-      if (logo.complete && logo.naturalWidth) g.drawImage(logo, 36, 678, 122, 24);
-    }
-  } else if (sc === 'controls') {
+    } else if (sc === 'controls') {
     title('Controls');
     const rows = [['TRIGGER / GRIP', 'grab / throw a ball'], ['A', 'reset the cans'], ['B (HOLD 1 S)', 'quit VR'],
                   ['X', 'open / close menu'], ['Y', 'refill the balls'], ['MENU', 'point + trigger']];
     rows.forEach(([k, t], i) => {
       const y = 112 + i * 62;
-      roundRect(g, 36, y - 22, 214, 44, 4); g.fillStyle = TV.raised; g.fill();
-      g.strokeStyle = TV.line; g.lineWidth = 1; g.stroke();
-      drawText(g, k, 48, y, { font: fnt(500, 15, true), color: TV.orange, ls: 1 });
-      drawText(g, t, 268, y, { font: fnt(400, 19), color: TV.ink });
+      roundRect(g, 36, y - 22, 214, 44, 12); g.fillStyle = UI.card; g.fill();
+      g.strokeStyle = UI.lineStrong; g.lineWidth = 2; g.stroke();
+      drawText(g, k, 48, y, { font: fnt(500, 15, true), color: UI.accentDeep, ls: 1 });
+      drawText(g, t, 268, y, { font: fnt(400, 19), color: UI.ink });
     });
-    wrapText(g, 'Hold a controller up to your face to see its labels.', 36, 520, 440, 26, { font: fnt(300, 18), color: TV.muted });
-    wrapText(g, 'Knock every can down in few throws and little time for a high score.', 36, 580, 440, 26, { font: fnt(300, 18), color: TV.muted });
+    wrapText(g, 'Hold a controller up to your face to see its labels.', 36, 520, 440, 26, { font: fnt(300, 18), color: UI.muted });
+    wrapText(g, 'Knock every can down to win.', 36, 580, 440, 26, { font: fnt(300, 18), color: UI.muted });
   } else if (sc === 'board') {
     title('Leaderboard', 36);
-    drawText(g, `${canCount(panel.viewRows)} cans`, PANEL_W / 2, 108, { font: fnt(600, 24), color: TV.heading, align: 'center' });
+    drawText(g, `${canCount(panel.viewRows)} cans`, PANEL_W / 2, 108, { font: fnt(600, 24), color: UI.heading, align: 'center' });
     const list = topFor(panel.viewRows).slice(0, BOARD_SIZE);
-    label('# NAME', 40, 158); label('SCORE', 270, 158, { align: 'right' }); label('THROWS', 372, 158, { align: 'right' }); label('TIME', 472, 158, { align: 'right' });
-    g.fillStyle = TV.lineStrong; g.fillRect(36, 174, 440, 1);
-    if (!list.length) wrapText(g, 'No scores yet. Be the first.', PANEL_W / 2 - 150, 360, 300, 28, { font: fnt(300, 22), color: TV.muted });
-    list.forEach((e, i) => {
-      const y = 196 + i * 42, top = i === 0, ink = top ? TV.orange : TV.ink;
-      if (i) { g.fillStyle = TV.line; g.fillRect(36, y - 21, 440, 1); }
-      drawText(g, String(i + 1), 40, y, { font: fnt(500, 18, true), color: top ? TV.orange : TV.muted });
-      drawText(g, e.name, 84, y, { font: fnt(top ? 700 : 500, 22), color: ink });
-      drawText(g, String(e.points), 270, y, { font: fnt(500, 20, true), color: ink, align: 'right' });
-      drawText(g, String(e.throws), 372, y, { font: fnt(400, 19, true), color: TV.ink, align: 'right' });
-      drawText(g, fmtTime(e.time), 472, y, { font: fnt(400, 19, true), color: TV.ink, align: 'right' });
-    });
-    drawText(g, 'SCORE = CANS × 50 × (THROW + TIME EFFICIENCY)', PANEL_W / 2, 622, { font: fnt(400, 12, true), color: TV.muted, align: 'center', ls: 1 });
+    if (panel.showScoring) { // hidden by default: how the score is worked out
+      wrapText(g, 'Score = cans × 50 × (throw efficiency + time efficiency).', 40, 200, 432, 30, { font: fnt(500, 21), color: UI.ink });
+      wrapText(g, 'Each efficiency is capped at ×2. Par is 0.8 throws and 6 seconds per can, so a par run scores cans × 100. Fewer throws and a faster time score higher.', 40, 280, 432, 28, { font: fnt(300, 19), color: UI.muted });
+    } else {
+      label('# NAME', 40, 158); label('SCORE', 270, 158, { align: 'right' }); label('THROWS', 372, 158, { align: 'right' }); label('TIME', 472, 158, { align: 'right' });
+      g.fillStyle = UI.lineStrong; g.fillRect(36, 173, 440, 2);
+      if (!list.length) wrapText(g, 'No scores yet. Be the first.', PANEL_W / 2 - 150, 360, 300, 28, { font: fnt(300, 22), color: UI.muted });
+      list.forEach((e, i) => {
+        const y = 196 + i * 42, top = i === 0, ink = top ? UI.accentDeep : UI.ink;
+        if (i) { g.fillStyle = UI.line; g.fillRect(36, y - 21, 440, 1); }
+        drawText(g, String(i + 1), 40, y, { font: fnt(500, 18, true), color: top ? UI.accentDeep : UI.muted });
+        drawText(g, e.name, 84, y, { font: fnt(top ? 700 : 500, 22), color: ink, maxW: 130 });
+        drawText(g, String(e.points), 270, y, { font: fnt(500, 20, true), color: ink, align: 'right' });
+        drawText(g, String(e.throws), 372, y, { font: fnt(400, 19, true), color: UI.ink, align: 'right' });
+        drawText(g, fmtTime(e.time), 472, y, { font: fnt(400, 19, true), color: UI.ink, align: 'right' });
+      });
+    }
   } else if (sc === 'result' && panel.result) {
     const res = panel.result;
-    title('You win');
+    title('Your score');
     label(`${res.n} CANS · ${fmtTime(res.time)} · ${res.throws} ${res.throws === 1 ? 'THROW' : 'THROWS'}`, PANEL_W / 2, 100, { align: 'center' });
-    drawText(g, String(res.points), PANEL_W / 2, 170, { font: fnt(700, 78), color: TV.orange, align: 'center' }); // the one figure that matters
-    label(`THROWS ×${res.throwEff.toFixed(2)} + TIME ×${res.timeEff.toFixed(2)} (MAX ×2 EACH)`, PANEL_W / 2, 224, { align: 'center', ls: 1 });
-    const verdict = res.saved ? 'Saved to the leaderboard' : res.rank === 1 ? '▲ New best score' : res.rank <= BOARD_SIZE ? `▲ Rank #${res.rank}` : '▼ Not in the top 10. Try again.';
-    drawText(g, verdict, PANEL_W / 2, 268, { font: fnt(600, 22), color: res.saved || res.rank <= BOARD_SIZE ? TV.ink : TV.muted, align: 'center' });
+    drawText(g, String(res.points), PANEL_W / 2, 170, { font: fnt(700, 80), color: UI.accent, align: 'center' }); // the big number
+    label('POINTS', PANEL_W / 2, 224, { align: 'center' });
+    const verdict = res.saved ? 'Saved to the leaderboard!' : res.rank === 1 ? 'New best score!' : res.rank <= BOARD_SIZE ? `You made the board: #${res.rank}` : 'Not in the top 10 this time. Try again!';
+    drawText(g, verdict, PANEL_W / 2, 268, { font: fnt(600, 22), color: res.saved || res.rank <= BOARD_SIZE ? UI.accentDeep : UI.muted, align: 'center' });
     if (!res.saved && res.rank <= BOARD_SIZE) {
-      label('YOUR INITIALS', PANEL_W / 2, 304, { align: 'center' });
-      panel.name.forEach((ch, i) => {
-        const x = 128 + i * 90;
-        roundRect(g, x, 370, 70, 58, 4); g.strokeStyle = TV.line; g.lineWidth = 2; g.stroke();
-        drawText(g, ch, x + 35, 400, { font: fnt(700, 40), color: TV.heading, align: 'center' });
-      });
+      const vr = renderer.xr.isPresenting, fy = vr ? 304 : 330, fh = vr ? 48 : 64;
+      label('YOUR NAME', PANEL_W / 2, vr ? 292 : 304, { align: 'center' });
+      roundRect(g, 36, fy, 440, fh, 14); g.fillStyle = UI.card; g.fill();
+      g.strokeStyle = UI.accent; g.lineWidth = 3; roundRect(g, 37.5, fy + 1.5, 437, fh - 3, 13); g.stroke();
+      const bar = caret ? '|' : ' ', ty = fy + fh / 2 + 1, size = vr ? 28 : 32;
+      if (panel.typed) drawText(g, panel.typed + bar, 56, ty, { font: fnt(600, size), color: UI.heading });
+      else drawText(g, bar + settings.name, 56, ty, { font: fnt(400, size), color: UI.muted });
+      if (!vr) label(panel.typed ? 'ENTER TO SAVE' : 'TYPE A NAME · ENTER TO USE THIS ONE', PANEL_W / 2, 416, { align: 'center', ls: 1 });
     }
   }
   panel.buttons.forEach((b, i) => drawButton(g, b, hands.some(h => h.hover === i) || panel.mouseHover === i));
-  if (panel.status) drawText(g, panel.status, PANEL_W / 2, 696, { font: fnt(500, 19), color: TV.orange, align: 'center' });
+  if (panel.status) drawText(g, panel.status, PANEL_W / 2, 696, { font: fnt(500, 19), color: UI.accentDeep, align: 'center' });
   panelTex.needsUpdate = true;
 }
-const logo = new Image(); // three vertex lockup (orange), a file: never retyped in a font
-logo.onload = () => { panel.drawnKey = ''; bump(); };
-logo.src = 'assets/threevertex-lockup-orange.svg';
 onFontsReady(() => { panel.drawnKey = ''; bump(); });
 
 const ray = new THREE.Raycaster();
@@ -1251,9 +1477,10 @@ function pollVRButtons(dt) {
   if (quitHold >= QUIT_HOLD) { quitHold = 0; quitVR(); }
 }
 
-// ---------- desktop fallback: drag to look, WASD to move, click to throw ----------
+// ---------- desktop controls: mouse look, hold to charge, release to throw, arc preview ----------
 const keys = {};
 window.addEventListener('keydown', e => {
+  if (typingName()) { nameKey(e); return; } // typing a name: R / M / WASD are letters now
   keys[e.code] = true;
   if (e.code === 'KeyR') resetCans();
   if (e.code === 'KeyM') togglePanel();
@@ -1261,15 +1488,35 @@ window.addEventListener('keydown', e => {
 document.getElementById('menuBtn').addEventListener('click', togglePanel);
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
+const THROW_MIN = 8, THROW_MAX = 14, CHARGE_DELAY = 0.25, CHARGE_TIME = 1.0; // m/s; seconds
+const chargePower = (held) => THROW_MIN + (THROW_MAX - THROW_MIN) * Math.min(1, Math.max(0, (held - CHARGE_DELAY) / CHARGE_TIME));
+const cv = renderer.domElement;
+const aim = { locked: false, lockWanted: settings.pointerLock && !!cv.requestPointerLock, down: false, t0: 0, power: THROW_MIN, charge: 0 };
+const aimEls = { cross: document.getElementById('crosshair'), power: document.getElementById('power'), fill: document.querySelector('#power i'), hint: document.getElementById('aimHint') };
+const setAimHint = () => { aimEls.hint.textContent = aim.lockWanted ? 'Click to aim · hold to charge · release to throw' : 'Drag to look · hold click to charge · release to throw'; };
+setAimHint();
+document.addEventListener('pointerlockchange', () => { aim.locked = document.pointerLockElement === cv; if (aim.locked) { aim.down = false; dragging = false; } });
+document.addEventListener('pointerlockerror', () => { aim.lockWanted = false; setAimHint(); }); // locking refused: fall back to drag-to-look
+
 let dragging = false, moved = 0, lastX = 0, lastY = 0;
-renderer.domElement.addEventListener('mousedown', e => { dragging = true; moved = 0; lastX = e.clientX; lastY = e.clientY; });
+const look = (dx, dy, k) => {
+  camera.rotation.y -= dx * k;
+  camera.rotation.x = Math.max(-1.4, Math.min(1.4, camera.rotation.x - dy * k));
+};
+cv.addEventListener('mousedown', e => {
+  if (e.button !== 0 || renderer.xr.isPresenting) return;
+  dragging = true; moved = 0; lastX = e.clientX; lastY = e.clientY;
+  if (!aim.locked && panelHitFromMouse(e) !== -1) { aim.down = false; return; } // pressing a menu button
+  if (!aim.locked && aim.lockWanted && !panel.open) { aim.down = false; cv.requestPointerLock(); return; } // first click only captures the mouse
+  aim.down = true; aim.t0 = performance.now();
+});
 window.addEventListener('mousemove', e => {
+  if (aim.locked) { look(e.movementX || 0, e.movementY || 0, 0.0022); return; }
   if (!dragging) return;
   const dx = e.clientX - lastX, dy = e.clientY - lastY;
   lastX = e.clientX; lastY = e.clientY;
   moved += Math.abs(dx) + Math.abs(dy);
-  camera.rotation.y -= dx * 0.004;
-  camera.rotation.x = Math.max(-1.4, Math.min(1.4, camera.rotation.x - dy * 0.004));
+  look(dx, dy, 0.004);
 });
 function panelHitFromMouse(e) { // which panel button (or -2 = panel body, -1 = not on the panel) is under the mouse?
   if (!panel.open) return -1;
@@ -1282,28 +1529,92 @@ function panelHitFromMouse(e) { // which panel button (or -2 = panel body, -1 = 
   return i >= 0 ? i : -2;
 }
 window.addEventListener('mousemove', e => {
+  if (aim.locked) return;
   const i = panelHitFromMouse(e);
   const v = i >= 0 ? i : -1;
   if (v !== panel.mouseHover) { panel.mouseHover = v; renderer.domElement.style.cursor = v >= 0 ? 'pointer' : ''; }
 });
 window.addEventListener('mouseup', (e) => {
-  const wasClick = dragging && moved < 5;
-  dragging = false;
-  if (!wasClick || renderer.xr.isPresenting) return;
-  const i = panelHitFromMouse(e);
-  if (i >= 0) { activatePanel(i); return; }
-  if (i === -2) return; // clicked the panel itself: don't throw a ball through it
-  throwBall();
+  const wasDown = aim.down, wasClick = dragging && moved < 5, held = (performance.now() - aim.t0) / 1000;
+  aim.down = false; dragging = false;
+  if (e.button !== 0 || renderer.xr.isPresenting) return;
+  if (!aim.locked) {
+    const i = panelHitFromMouse(e);
+    if (i >= 0 && wasClick) { activatePanel(i); return; }
+    if (i === -2) return; // clicked the panel itself: don't throw a ball through it
+  }
+  if (wasDown && (aim.locked || wasClick)) throwBall(chargePower(held));
 });
 
-function throwBall(speed = 8) {
-  const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
-  const p = camera.getWorldPosition(new THREE.Vector3()).addScaledVector(dir, 0.4);
+// Where a ball thrown right now starts, and how fast it leaves (same numbers throwBall uses).
+const throwOrigin = () => {
+  const dir = camera.getWorldDirection(new THREE.Vector3());
+  return { dir, p: camera.getWorldPosition(new THREE.Vector3()).addScaledVector(dir, 0.4) };
+};
+const throwVelocity = (dir, power) => new THREE.Vector3(dir.x * power, dir.y * power + 1.5, dir.z * power);
+function throwBall(power = THROW_MIN) {
+  const { dir, p } = throwOrigin();
   const ball = makeBall(p.x, p.y, p.z);
-  ball.body.velocity.set(dir.x * speed, dir.y * speed + 1.5, dir.z * speed);
+  const v = throwVelocity(dir, power);
+  ball.body.velocity.set(v.x, v.y, v.z);
   registerThrow();
-  play('whoosh', p, 0.6);
+  play('whoosh', p, 0.4 + 0.5 * Math.min(1, power / THROW_MAX));
   return ball;
+}
+
+// Flight path preview: same integration order as cannon-es (damping, gravity, move) so the dots match the real ball.
+const ARC_MAX = 100;
+function predictArc(origin, vel, maxT = 3) {
+  const pts = [], p = origin.clone(), v = vel.clone(), dt = 1 / 240, damp = Math.pow(1 - 0.01, dt), r = BALL_RADIUS;
+  let landing = null, wall = false;
+  for (let i = 0; i < maxT * 240; i++) {
+    v.multiplyScalar(damp); v.y -= 9.8 * dt; p.addScaledVector(v, dt);
+    const onTable = Math.abs(p.x) <= 0.6 + r && p.z >= -4.3 - r && p.z <= -3.7 + r;
+    const onCounter = Math.abs(p.x) <= 1.59 + r && Math.abs(p.z - COUNTER_Z) <= 0.24 + r;
+    if (onTable && p.y <= TABLE_TOP + r) { landing = p.clone(); landing.y = Math.max(landing.y, TABLE_TOP + r); break; }
+    if (onCounter && p.y <= COUNTER_TOP + r) { landing = p.clone(); landing.y = Math.max(landing.y, COUNTER_TOP + r); break; }
+    if (Math.abs(p.x) <= 1.5 && p.y > 0.06 && p.y < 2.46 && p.z <= BACKWALL_Z + 0.03 + r) { landing = p.clone(); wall = true; break; }
+    if (p.y <= r) { landing = p.clone(); landing.y = r; break; }
+    if (i % 8 === 0 && pts.length < ARC_MAX) pts.push(p.clone());
+  }
+  return { pts, landing: landing || p.clone(), wall };
+}
+let arcObj = null;
+function ensureArc() {
+  if (arcObj) return arcObj;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ARC_MAX * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  geo.setDrawRange(0, 0);
+  const dot = canvasTex(32, 32, (g, w, h) => { g.beginPath(); g.arc(w / 2, h / 2, w / 2 - 2, 0, Math.PI * 2); g.fillStyle = '#fff'; g.fill(); });
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xff9d55, size: 0.03, map: dot, alphaTest: 0.3, transparent: true, sizeAttenuation: true, fog: false }));
+  pts.frustumCulled = false; pts.visible = false;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.06, 0.085, 28), new THREE.MeshBasicMaterial({ color: 0xff9d55, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false, fog: false }));
+  ring.rotation.x = -Math.PI / 2; ring.visible = false;
+  scene.add(pts, ring);
+  return (arcObj = { pts, ring, geo });
+}
+function updateAim() {
+  const desktop = !renderer.xr.isPresenting, active = desktop && !panel.open;
+  const charging = active && aim.down && (aim.locked || moved < 5);
+  const held = charging ? (performance.now() - aim.t0) / 1000 : 0;
+  aim.power = chargePower(held);
+  aim.charge = Math.min(1, Math.max(0, (held - CHARGE_DELAY) / CHARGE_TIME));
+  aimEls.cross.style.display = active ? 'block' : 'none';
+  aimEls.hint.style.display = active && !aim.locked ? 'block' : 'none';
+  aimEls.power.style.display = charging ? 'block' : 'none';
+  aimEls.fill.style.width = `${Math.round(aim.charge * 100)}%`;
+  if (!charging && !arcObj) return;
+  const a = ensureArc();
+  a.pts.visible = a.ring.visible = charging;
+  if (!charging) return;
+  const { dir, p } = throwOrigin();
+  const { pts, landing, wall } = predictArc(p, throwVelocity(dir, aim.power));
+  const arr = a.geo.attributes.position.array;
+  pts.forEach((q, i) => arr.set([q.x, q.y, q.z], i * 3));
+  a.geo.setDrawRange(0, pts.length);
+  a.geo.attributes.position.needsUpdate = true;
+  if (wall) { a.ring.rotation.x = 0; a.ring.position.set(landing.x, landing.y, BACKWALL_Z + 0.05); } // hits the back wall
+  else { a.ring.rotation.x = -Math.PI / 2; a.ring.position.set(landing.x, Math.max(0.012, landing.y - BALL_RADIUS + 0.012), landing.z); }
 }
 
 function moveDesktop(dt) {
@@ -1375,11 +1686,11 @@ function burst(x, y, z, color, n) {
 }
 
 const bannerTex = canvasTex(1024, 256, (g, w, h) => {
-  g.font = fnt(700, 180); g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.lineJoin = 'round'; g.lineWidth = 26; g.strokeStyle = TV.navy; g.strokeText('YOU WIN!', w / 2, h / 2 + 8);
-  g.fillStyle = TV.orange; g.fillText('YOU WIN!', w / 2, h / 2 + 8);
+  g.font = wfnt(700, 190); g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.lineJoin = 'round'; g.lineWidth = 26; g.strokeStyle = UI.bannerEdge; g.strokeText('YOU WIN!', w / 2, h / 2 + 8);
+  g.fillStyle = UI.sun; g.fillText('YOU WIN!', w / 2, h / 2 + 8);
 }, null, true);
-const banner = new THREE.Sprite(new THREE.SpriteMaterial({ map: bannerTex, transparent: true, depthTest: false, fog: false }));
+const banner = new THREE.Sprite(new THREE.SpriteMaterial({ map: bannerTex, transparent: true, depthTest: false, fog: false, toneMapped: false }));
 banner.renderOrder = 9; banner.visible = false;
 banner.position.set(0, 1.95, -2.4);
 scene.add(banner);
@@ -1488,8 +1799,10 @@ renderer.setAnimationLoop(() => {
   updateHands(dt);
   updatePanel();
   updateRefills();
+  updateLooseBalls(dt);
+  updateAim();
   updateFX(dt);
-  if (winPanelAt !== null && simTime >= winPanelAt) { winPanelAt = null; openPanel('result'); }
+  if (winPanelAt !== null && simTime >= winPanelAt) { winPanelAt = null; FX.bannerAt = null; banner.visible = false; openPanel('result'); } // the banner makes way for the score card
   // small fixed step: a 9.6 cm ball at ~10 m/s must not tunnel through 6.6 cm cans
   world.step(1 / 240, dt, 12);
   for (const { mesh, body } of dynamics) {
@@ -1511,7 +1824,7 @@ setQuality(settings.quality);
 if (!settings.tutorialDone) openPanel('controls'); // first run only
 
 // handle for tests / debugging
-window.game = { boardCanvas, panelCanvas, logo, vrButton, THREE, scene, camera, rig, renderer, world, cans, balls, slots, hands, score, audio, panel, menuMesh, settings, FX, banner,
+window.game = { sun, getArc: () => arcObj, boothG, BOOTH_Z, COUNTER_Z, COUNTER_TOP, BACKWALL_Z, farScenery, typeKey, tuning, aim, predictArc, chargePower, typingName, boardCanvas, panelCanvas, vrButton, THREE, scene, camera, rig, renderer, world, cans, balls, slots, hands, score, audio, panel, menuMesh, settings, FX, banner,
   play, resetScene, resetCans, spawnBalls, throwBall, grab, release, quitVR, openPanel, closePanel, togglePanel, setRows, setQuality,
   computePoints, addScore, topFor, loadBoard, exportBoard, importBoard, rankFor, celebrate, getSimTime: () => simTime };
 </script>

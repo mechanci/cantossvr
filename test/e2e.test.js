@@ -17,14 +17,6 @@ let server, browser, base;
 test.before(async () => {
   server = http.createServer((req, res) => {
     const url = decodeURIComponent(req.url.split('?')[0]);
-    if (url.startsWith('/assets/')) { // logo / favicon files
-      const file = path.join(root, url);
-      if (file.startsWith(path.join(root, 'assets')) && fs.existsSync(file)) {
-        res.setHeader('content-type', file.endsWith('.svg') ? 'image/svg+xml' : 'application/octet-stream');
-        return res.end(fs.readFileSync(file));
-      }
-      res.statusCode = 404; return res.end();
-    }
     res.setHeader('content-type', 'text/html');
     res.end(fs.readFileSync(path.join(root, 'index.html')));
   });
@@ -40,7 +32,7 @@ test.after(async () => { await browser?.close(); server?.close(); });
 async function openPage({ tutorial = false } = {}) {
   const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
   // fresh browser profile each time; by default pretend the first-run tutorial was already dismissed
-  if (!tutorial) await page.addInitScript(() => { if (!localStorage.getItem('cantoss.settings')) localStorage.setItem('cantoss.settings', JSON.stringify({ tutorialDone: true })); });
+  if (!tutorial) await page.addInitScript(() => { if (!localStorage.getItem('cantoss.settings')) localStorage.setItem('cantoss.settings', JSON.stringify({ tutorialDone: true, pointerLock: false })); });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
@@ -619,20 +611,20 @@ test('leaderboard: save a win with initials, shows on the board, survives reload
   await settle(page, 800);
   await page.evaluate(() => { window.game.throwBall(); window.game.cans.forEach(c => c.body.position.set(3, 0.3, -2)); });
   await page.waitForFunction(() => window.game.panel.open && window.game.panel.screen === 'result', null, { timeout: 40000 });
-  await page.evaluate(() => {
-    const click = id => window.game.panel.buttons.find(b => b.id === id).action();
-    click('up0'); click('up1'); click('up1'); click('dn2');          // A->B, A->C, A->Z ... => "BCZ"
-    window.game.panel.buttons.find(b => b.id === 'save').action();
-  });
+  await page.keyboard.type('remy7?! ');                   // junk characters are ignored; R and M are letters here, not shortcuts
+  await page.keyboard.press('Backspace');                  // REMY7 -> REMY
+  assert.deepStrictEqual(await page.evaluate(() => [window.game.panel.open, window.game.panel.typed, window.game.cans.length]), [true, 'REMY', 10],
+    'typing must not trigger the reset / menu shortcuts');
+  await page.keyboard.press('Enter');
   assert.strictEqual(await page.evaluate(() => window.game.panel.result.saved), true);
   const stored = await page.evaluate(() => window.game.topFor(4));
   assert.strictEqual(stored.length, 1);
-  assert.strictEqual(stored[0].name, 'BCZ');
+  assert.strictEqual(stored[0].name, 'REMY');
   await page.reload();
   await page.waitForFunction(() => window.game && window.game.cans.length > 0);
   assert.strictEqual((await page.evaluate(() => window.game.topFor(4))).length, 1, 'score did not survive reload');
   assert.strictEqual((await page.evaluate(() => window.game.topFor(5))).length, 0, 'scores must be per pyramid size');
-  assert.strictEqual(await page.evaluate(() => window.game.settings.name), 'BCZ', 'last initials should be remembered');
+  assert.strictEqual(await page.evaluate(() => window.game.settings.name), 'REMY', 'last name should be remembered');
   await page.close();
 });
 
@@ -673,12 +665,15 @@ test('leaderboard: ranking, top-10 limit, export and import (with bad data rejec
 
 test('quality toggle: low turns shadows off, and is remembered', async () => {
   const { page } = await openPage();
+  assert.strictEqual(await page.evaluate(() => window.game.sun.castShadow), true, 'high quality casts shadows');
   await page.evaluate(() => window.game.setQuality('low'));
-  assert.strictEqual(await page.evaluate(() => window.game.scene.children.find(c => c.isDirectionalLight).castShadow), false);
+  assert.strictEqual(await page.evaluate(() => window.game.sun.castShadow), false);
+  assert.deepStrictEqual(await page.evaluate(() => window.game.farScenery.map(o => o.visible)), [false, false], 'low hides the ferris wheel and trees');
   await page.reload();
   await page.waitForFunction(() => window.game && window.game.cans.length > 0);
   assert.strictEqual(await page.evaluate(() => window.game.settings.quality), 'low');
-  assert.strictEqual(await page.evaluate(() => window.game.scene.children.find(c => c.isDirectionalLight).castShadow), false);
+  assert.strictEqual(await page.evaluate(() => window.game.sun.castShadow), false);
+  assert.deepStrictEqual(await page.evaluate(() => window.game.farScenery.map(o => o.visible)), [false, false]);
   await page.close();
 });
 
@@ -713,75 +708,386 @@ test('the "?" help is collapsed by default and opens on click', async () => {
 
 const pixel = (page, canvasKey, x, y) => page.evaluate(([k, x, y]) => Array.from(window.game[k].getContext('2d').getImageData(x, y, 1, 1).data), [canvasKey, x, y]);
 
-test('design: in-VR menu is flat deep navy with an orange primary button (brand tokens)', async () => {
+test('design: the in-VR card is warm cream with a sunshine primary button', async () => {
   const { page } = await openPage({ tutorial: true });     // first run opens the controls card
   await page.waitForTimeout(500);
-  assert.deepStrictEqual((await pixel(page, 'panelCanvas', 20, 300)).slice(0, 3), [11, 28, 40], 'panel ground must be flat #0b1c28');
+  assert.deepStrictEqual((await pixel(page, 'panelCanvas', 20, 300)).slice(0, 3), [255, 246, 230], 'card ground must be cream #fff6e6');
   const b = await page.evaluate(() => window.game.panel.buttons.find(b => b.label === 'Got it'));
   assert.ok(b.primary, '"Got it" should be the primary button');
-  assert.deepStrictEqual((await pixel(page, 'panelCanvas', b.x + 8, b.y + 8)).slice(0, 3), [255, 157, 85], 'primary button must be #ff9d55');
+  assert.deepStrictEqual((await pixel(page, 'panelCanvas', b.x + 12, b.y + b.h / 2)).slice(0, 3), [255, 201, 60], 'primary button must be sunshine #ffc93c');
   await page.close();
 });
 
-test('design: the lockup file loads into the menu footer', async () => {
-  const { page } = await openPage();
-  await page.evaluate(() => window.game.openPanel('main'));
-  await page.waitForFunction(() => window.game.logo.complete && window.game.logo.naturalWidth > 0);
-  await page.waitForTimeout(300);
-  // somewhere in the footer strip there must be orange logo pixels
-  const found = await page.evaluate(() => {
-    const d = window.game.panelCanvas.getContext('2d').getImageData(36, 676, 130, 28).data;
-    for (let i = 0; i < d.length; i += 4) if (d[i] > 240 && d[i + 1] > 140 && d[i + 1] < 175 && d[i + 2] < 110) return true;
-    return false;
-  });
-  assert.ok(found, 'orange lockup not drawn in the menu footer');
-  await page.close();
-});
-
-test('design: the scoreboard is navy while playing and turns orange when you win', async () => {
+test('scene: the chalkboard is dark slate green, and its writing changes when you win', async () => {
   const { page } = await openPage();
   await settle(page, 800);
-  assert.deepStrictEqual((await pixel(page, 'boardCanvas', 240, 10)).slice(0, 3), [11, 28, 40]);
+  const slate = (await pixel(page, 'boardCanvas', 8, 8)).slice(0, 3);
+  assert.ok(slate[1] > slate[0] && slate[1] >= slate[2] && slate[0] < 90, `slate should be dark green, got ${slate}`);
+  const sum = () => page.evaluate(() => { const d = window.game.boardCanvas.getContext('2d').getImageData(0, 0, 1024, 400).data; let s = 0; for (let i = 0; i < d.length; i += 4 * 7) s += d[i] + d[i + 1] + d[i + 2]; return s; });
+  const before = await sum();
   await page.evaluate(() => { window.game.throwBall(); window.game.cans.forEach(c => c.body.position.set(3, 0.3, -2)); });
   await page.waitForFunction(() => window.game.score.won);
   await page.waitForTimeout(300);
-  assert.deepStrictEqual((await pixel(page, 'boardCanvas', 10, 10)).slice(0, 3), [255, 157, 85], 'win state is one flat orange field');
+  assert.notStrictEqual(await sum(), before, 'board did not redraw for the win');
   await page.close();
 });
 
-test('design: page chrome uses the brand look; boot screen is gone once the game renders', async () => {
+test('design: page chrome is friendly (pill buttons, cream card, sky ground); boot screen is gone once the game renders', async () => {
   const { page } = await openPage();
   const r = await page.evaluate(() => {
     const cs = (sel, p) => getComputedStyle(document.querySelector(sel))[p];
     return {
-      bodyBg: cs('body', 'backgroundColor'), menuBg: cs('#menuBtn', 'backgroundColor'), menuText: cs('#menuBtn', 'color'),
-      resetBg: cs('#resetBtn', 'backgroundColor'), radius: cs('#resetBtn', 'borderTopLeftRadius'),
-      font: cs('#resetBtn', 'fontFamily'), vr: cs('#VRButton', 'backgroundColor'), vrOff: document.querySelector('#VRButton').classList.contains('tv-off'),
+      bodyBg: cs('body', 'backgroundColor'), menuBg: cs('#menuBtn', 'backgroundColor'), resetBg: cs('#resetBtn', 'backgroundColor'),
+      radius: cs('#resetBtn', 'borderTopLeftRadius'), font: cs('#resetBtn', 'fontFamily'), vrOff: document.querySelector('#VRButton').classList.contains('vr-off'),
       vrRadius: cs('#VRButton', 'borderTopLeftRadius'), boot: cs('#boot', 'display'), favicon: document.querySelector('link[rel=icon]').getAttribute('href'),
     };
   });
-  assert.strictEqual(r.bodyBg, 'rgb(11, 28, 40)');
-  assert.strictEqual(r.menuBg, 'rgb(255, 157, 85)');
-  assert.strictEqual(r.menuText, 'rgb(31, 66, 96)');
-  assert.strictEqual(r.resetBg, 'rgb(19, 41, 58)');
-  assert.strictEqual(r.radius, '4px');
-  assert.match(r.font, /Lexend/);
+  assert.strictEqual(r.bodyBg, 'rgb(214, 236, 247)');
+  assert.strictEqual(r.menuBg, 'rgb(255, 201, 60)');
+  assert.strictEqual(r.resetBg, 'rgb(255, 255, 255)');
+  assert.strictEqual(r.radius, '999px');
+  assert.match(r.font, /Fredoka/);
   assert.ok(r.vrOff, 'headless has no VR: the button must read as inactive');
-  assert.strictEqual(r.vr, 'rgb(19, 41, 58)');
-  assert.strictEqual(r.vrRadius, '4px');
+  assert.strictEqual(r.vrRadius, '999px');
   assert.strictEqual(r.boot, 'none');
-  assert.match(r.favicon, /threevertex-mark-on-navy\.svg$/);
+  assert.match(r.favicon, /^data:image\/svg\+xml/);
   await page.close();
 });
 
-test('design: the "?" help card is styled with keycaps and opens/closes', async () => {
+test('design: the "?" help card is a cream card with keycaps and opens/closes', async () => {
   const { page } = await openPage();
   await page.click('#helpBtn');
   assert.ok(await page.isVisible('#help'));
   assert.ok((await page.locator('#help kbd').count()) >= 8);
   const bg = await page.evaluate(() => getComputedStyle(document.querySelector('#help')).backgroundColor);
-  assert.strictEqual(bg, 'rgb(19, 41, 58)');
+  assert.strictEqual(bg, 'rgb(255, 246, 230)');
   await page.click('#helpBtn');
   assert.strictEqual(await page.isVisible('#help'), false);
+  await page.close();
+});
+
+test('"You win" is shown once at a time: the banner first, then the score card (no chalkboard or card duplicate)', async () => {
+  const { page } = await openPage();
+  await settle(page, 600);
+  await page.evaluate(() => { window.game.throwBall(); window.game.cans.forEach(c => c.body.position.set(3, 0.3, -2)); });
+  await page.waitForFunction(() => window.game.banner.visible);
+  assert.strictEqual(await page.evaluate(() => window.game.panel.open), false, 'the card must not open while the banner is up');
+  await page.waitForFunction(() => window.game.panel.open && window.game.panel.screen === 'result', null, { timeout: 60000 });
+  assert.strictEqual(await page.evaluate(() => window.game.banner.visible), false, 'the banner must make way for the card');
+  await page.close();
+});
+
+// ---------------------------------------------------------------- aiming, stray balls, typed name, hidden scoring
+
+const toResult = async (page) => {
+  await page.evaluate(() => { window.game.throwBall(); window.game.cans.forEach(c => c.body.position.set(3, 0.3, -2)); });
+  await page.waitForFunction(() => window.game.panel.open && window.game.panel.screen === 'result', null, { timeout: 40000 });
+};
+
+test('stray balls: a thrown ball is cleared away a few seconds after it comes to rest, not before', async () => {
+  const { page } = await openPage();
+  await page.evaluate(() => { window.game.tuning.ballLifetime = 1.2; window.game.tuning.ballFade = 0.5; });
+  await settle(page, 500);
+  const count = await page.evaluate(() => { const b = window.game.throwBall(); b.body.velocity.set(0, 0, -3); return window.game.balls.length; });
+  assert.strictEqual(count, 5, '4 on the stand + 1 thrown');
+  await page.waitForTimeout(300);
+  assert.strictEqual(await page.evaluate(() => window.game.balls.length), 5, 'ball must not vanish while it is still flying');
+  await page.waitForFunction(() => window.game.balls.length === 4, null, { timeout: 30000 });
+  assert.ok(await page.evaluate(() => window.game.slots.every(Boolean)), 'balls on the stand are never cleared');
+  await page.close();
+});
+
+test('stray balls: a ball in your hand is never cleared away', async () => {
+  const { page } = await openPage();
+  await page.evaluate(() => { window.game.tuning.ballLifetime = 0.5; window.game.tuning.ballFade = 0.3; });
+  const r = await page.evaluate(async () => {
+    const { hands, balls } = window.game;
+    hands[1].ctrl.matrixAutoUpdate = true;
+    hands[1].ctrl.position.copy(balls[0].mesh.position);
+    await new Promise(r => requestAnimationFrame(r));
+    hands[1].ctrl.dispatchEvent({ type: 'selectstart' });
+    hands[1].ctrl.position.y += 0.4;
+    await new Promise(r => setTimeout(r, 4000));
+    return { held: !!hands[1].held, scale: hands[1].held && hands[1].held.mesh.scale.x };
+  });
+  assert.ok(r.held && r.scale === 1, 'held ball was cleared away');
+  await page.close();
+});
+
+test('typed name: the result card keeps up to 8 letters/digits and saves with Enter', async () => {
+  const { page } = await openPage();
+  await settle(page, 600);
+  await toResult(page);
+  assert.ok(await page.evaluate(() => window.game.typingName()), 'card should be waiting for a typed name on desktop');
+  await page.keyboard.type('abcdefghijkl');
+  assert.strictEqual(await page.evaluate(() => window.game.panel.typed), 'ABCDEFGH');
+  await page.keyboard.press('Enter');
+  assert.deepStrictEqual(await page.evaluate(() => window.game.topFor(4).map(e => e.name)), ['ABCDEFGH']);
+  assert.strictEqual(await page.evaluate(() => window.game.typingName()), false, 'keys are shortcuts again after saving');
+  await page.close();
+});
+
+test('typed name: Enter with nothing typed reuses the last name', async () => {
+  const { page } = await openPage();
+  await settle(page, 600);
+  await toResult(page);
+  await page.keyboard.press('Enter');
+  assert.deepStrictEqual(await page.evaluate(() => window.game.topFor(4).map(e => e.name)), ['AAA']);
+  await page.close();
+});
+
+test('VR keyboard: an on-screen keyboard (A-Z, 0-9, DEL) types the name, pointed at with the controller', async () => {
+  const { page } = await openPage();
+  await settle(page, 600);
+  await page.evaluate(() => { Object.defineProperty(window.game.renderer.xr, 'isPresenting', { value: true, configurable: true }); });
+  await toResult(page);
+  const ids = await page.evaluate(() => window.game.panel.buttons.map(b => b.id).filter(Boolean));
+  const need = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'].map(c => `key_${c}`).concat(['key_DEL', 'save', 'again', 'close']);
+  const missing = need.filter(i => !ids.includes(i));
+  assert.deepStrictEqual(missing, [], `on-screen keys missing: ${missing}`);
+  // keys do not overlap each other or the action buttons, and all sit inside the panel
+  const geo = await page.evaluate(() => window.game.panel.buttons.map(b => ({ id: b.id, x: b.x, y: b.y, w: b.w, h: b.h })));
+  geo.forEach(a => {
+    assert.ok(a.x >= 4 && a.x + a.w <= 508 && a.y >= 4 && a.y + a.h <= 716, `${a.id} is outside the panel`);
+    geo.forEach(b => { if (a !== b) assert.ok(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y, `${a.id} overlaps ${b.id}`); });
+  });
+  // press keys with a controller ray: type BOB, a typo, delete it, then the name is capped at 8
+  const press = (id) => page.evaluate(id => { const b = window.game.panel.buttons.find(b => b.id === id); window.game.panel.buttons.indexOf(b); b.action(); }, id);
+  for (const k of ['key_B', 'key_O', 'key_X', 'key_DEL', 'key_B']) await press(k);
+  assert.strictEqual(await page.evaluate(() => window.game.panel.typed), 'BOB');
+  for (const k of ['key_1', 'key_2', 'key_3', 'key_4', 'key_5', 'key_6', 'key_7']) await press(k);
+  assert.strictEqual(await page.evaluate(() => window.game.panel.typed), 'BOB12345', 'name is capped at 8');
+  await press('key_DEL'); await press('key_DEL'); await press('key_Z');
+  await press('save');
+  assert.deepStrictEqual(await page.evaluate(() => window.game.topFor(4).map(e => e.name)), ['BOB123Z']);
+  await page.close();
+});
+
+test('VR keyboard: pointing at a key with the controller ray presses it', async () => {
+  const { page } = await openPage();
+  await settle(page, 600);
+  await page.evaluate(() => { Object.defineProperty(window.game.renderer.xr, 'isPresenting', { value: true, configurable: true }); });
+  await toResult(page);
+  const r = await page.evaluate(async () => {
+    const { hands, menuMesh, THREE, panel } = window.game;
+    const frame = () => new Promise(r => requestAnimationFrame(r));
+    const hand = hands[1]; hand.ctrl.matrixAutoUpdate = true;
+    menuMesh.updateMatrixWorld(true);
+    const key = panel.buttons.find(b => b.id === 'key_Q');
+    const local = new THREE.Vector3(((key.x + key.w / 2) / 512 - 0.5) * 0.5, ((1 - (key.y + key.h / 2) / 720) - 0.5) * 0.5 * 720 / 512, 0);
+    const target = menuMesh.localToWorld(local);
+    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(menuMesh.quaternion);
+    hand.ctrl.position.copy(target).addScaledVector(normal, 0.5);
+    hand.ctrl.quaternion.copy(menuMesh.quaternion);
+    await frame(); await frame();
+    const hovered = panel.buttons[hand.hover] && panel.buttons[hand.hover].id;
+    hand.ctrl.dispatchEvent({ type: 'selectstart' }); hand.ctrl.dispatchEvent({ type: 'selectend' });
+    return { hovered, typed: panel.typed };
+  });
+  assert.strictEqual(r.hovered, 'key_Q');
+  assert.strictEqual(r.typed, 'Q');
+  await page.close();
+});
+
+test('scoring formula is not shown upfront; a "How scoring works" toggle reveals it', async () => {
+  const { page } = await openPage();
+  await page.evaluate(() => window.game.openPanel('board'));
+  const labels = await page.evaluate(() => window.game.panel.buttons.map(b => b.label));
+  assert.ok(labels.includes('How scoring works'), `labels: ${labels}`);
+  assert.strictEqual(await page.evaluate(() => window.game.panel.showScoring), false);
+  await page.evaluate(() => window.game.panel.buttons.find(b => b.id === 'how').action());
+  assert.strictEqual(await page.evaluate(() => window.game.panel.showScoring), true);
+  assert.ok((await page.evaluate(() => window.game.panel.buttons.map(b => b.label))).includes('Back to scores'));
+  await page.evaluate(() => window.game.closePanel());
+  await page.evaluate(() => window.game.openPanel('main'));
+  await page.evaluate(() => window.game.panel.buttons.find(b => b.label === 'Leaderboard').action());
+  assert.strictEqual(await page.evaluate(() => window.game.panel.showScoring), false, 'toggle resets when the board is reopened');
+  await page.close();
+});
+
+test('PC aiming: crosshair is visible on desktop, hidden while the menu is open', async () => {
+  const { page } = await openPage();
+  await settle(page, 600);
+  assert.strictEqual(await page.isVisible('#crosshair'), true);
+  await page.evaluate(() => window.game.openPanel('main'));
+  await page.waitForTimeout(200);
+  assert.strictEqual(await page.isVisible('#crosshair'), false);
+  await page.close();
+});
+
+test('PC aiming: holding the button charges power with a bar and an arc; release throws at that power', async () => {
+  const { page } = await openPage();
+  await settle(page, 800);
+  await page.mouse.move(400, 300);
+  await page.mouse.down();
+  await page.waitForTimeout(250);
+  const early = await page.evaluate(() => ({ p: window.game.aim.power, bar: getComputedStyle(document.querySelector('#power')).display }));
+  assert.strictEqual(early.bar, 'block', 'power bar should show while charging');
+  await page.waitForTimeout(2200);
+  const late = await page.evaluate(() => {
+    const g = window.game, arc = g.getArc();
+    return { p: g.aim.power, charge: g.aim.charge, n: arc && arc.pts.visible ? arc.geo.drawRange.count : 0 };
+  });
+  assert.ok(late.p > early.p + 3, `power did not grow: ${early.p} -> ${late.p}`);
+  assert.ok(late.p <= 14.001 && late.charge > 0.99, 'power is capped at 14 m/s');
+  assert.ok(late.n > 10, `arc preview should show many dots, got ${late.n}`);
+  const before = await page.evaluate(() => window.game.balls.length);
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+  const vz = await page.evaluate(() => Math.min(...window.game.balls.filter(b => b.slot === null).map(b => b.body.velocity.z)));
+  assert.strictEqual(await page.evaluate(() => window.game.balls.length), before + 1);
+  assert.ok(vz < -10, `a fully charged throw should leave fast, vz=${vz}`);
+  await page.waitForTimeout(200);
+  assert.strictEqual(await page.evaluate(() => { const a = window.game.getArc(); return !a.pts.visible && !a.ring.visible; }), true, 'arc and landing marker hide after the throw');
+  await page.close();
+});
+
+test('PC aiming: a quick click throws a gentle ball (minimum power)', async () => {
+  const { page } = await openPage();
+  await settle(page, 600);
+  await page.mouse.click(400, 300);
+  await page.waitForTimeout(100);
+  const vz = await page.evaluate(() => Math.min(...window.game.balls.filter(b => b.slot === null).map(b => b.body.velocity.z)));
+  assert.ok(vz < -6 && vz > -10, `quick click speed ${vz}`);
+  await page.close();
+});
+
+test('PC aiming: the arc prediction matches where a real ball lands', async () => {
+  const { page } = await openPage();
+  await settle(page, 600);
+  const r = await page.evaluate(async () => {
+    const g = window.game, T = g.THREE;
+    g.camera.rotation.x = -0.5;                                   // lob it down onto the grass in front of the booth
+    const dir = g.camera.getWorldDirection(new T.Vector3());
+    const origin = g.camera.getWorldPosition(new T.Vector3()).addScaledVector(dir, 0.4);
+    const power = 5;
+    const predicted = g.predictArc(origin, new T.Vector3(dir.x * power, dir.y * power + 1.5, dir.z * power)).landing;
+    const ball = g.throwBall(power);
+    let landed = null;
+    for (let i = 0; i < 900 && !landed; i++) {
+      await new Promise(r => requestAnimationFrame(r));
+      const p = ball.body.position;
+      if (p.y < 0.2) landed = { x: p.x, y: p.y, z: p.z };
+    }
+    return { predicted: { x: predicted.x, y: predicted.y, z: predicted.z }, landed };
+  });
+  assert.ok(r.landed, 'ball never landed');
+  const err = Math.hypot(r.predicted.x - r.landed.x, r.predicted.z - r.landed.z);
+  assert.ok(err < 0.6, `arc landing is ${err.toFixed(2)} m from the real landing: ${JSON.stringify(r)}`);
+  await page.close();
+});
+
+test('PC aiming: with the mouse captured, the first click only captures it and does not throw', async () => {
+  const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+  await page.addInitScript(() => localStorage.setItem('cantoss.settings', JSON.stringify({ tutorialDone: true, pointerLock: true })));
+  await page.route('**/*', route => {
+    const url = route.request().url();
+    if (url.startsWith(base)) return route.continue();
+    if (/^https:\/\/fonts\.googleapis\.com\//.test(url)) return route.fulfill({ body: '', contentType: 'text/css' });
+    for (const [re, dir] of CDN) { const m = url.match(re); if (m) return route.fulfill({ path: path.join(root, dir, m[1]), contentType: 'text/javascript' }); }
+    return route.abort();
+  });
+  await page.goto(base);
+  await page.waitForFunction(() => window.game && window.game.balls.length === 4);
+  assert.strictEqual(await page.evaluate(() => window.game.aim.lockWanted), true);
+  assert.match(await page.textContent('#aimHint'), /Click to aim/);
+  await page.evaluate(() => { document.querySelector('canvas').requestPointerLock = () => { window.__lockAsked = true; }; });
+  await page.mouse.click(400, 300);
+  assert.strictEqual(await page.evaluate(() => window.__lockAsked === true), true, 'first click should ask for pointer lock');
+  assert.strictEqual(await page.evaluate(() => window.game.balls.length), 4, 'the capturing click must not throw a ball');
+  await page.close();
+});
+
+test('help card lists the new mouse controls', async () => {
+  const { page } = await openPage();
+  await page.click('#helpBtn');
+  const txt = await page.textContent('#help');
+  assert.match(txt, /charge the throw/);
+  assert.match(txt, /free the mouse/);
+  await page.close();
+});
+
+// ---------------------------------------------------------------- the Claude Design booth scene
+
+test('scene: a low throw bounces off the booth counter instead of passing through it', async () => {
+  const { page } = await openPage();
+  await settle(page, 600);
+  const r = await page.evaluate(async () => {
+    const g = window.game, frame = () => new Promise(r => requestAnimationFrame(r));
+    const ball = g.throwBall();
+    ball.body.position.set(0, 0.6, -1.5); ball.body.velocity.set(0, 0, -6);
+    let minZ = 0;
+    for (let i = 0; i < 80; i++) { await frame(); minZ = Math.min(minZ, ball.body.position.z); }
+    return { minZ, vz: ball.body.velocity.z };
+  });
+  assert.ok(r.minZ > -2.4, `ball went through the counter (reached z=${r.minZ})`);
+  await page.close();
+});
+
+test('scene: a miss bounces off the back wall instead of vanishing into it', async () => {
+  const { page } = await openPage();
+  await settle(page, 600);
+  const r = await page.evaluate(async () => {
+    const g = window.game, frame = () => new Promise(r => requestAnimationFrame(r));
+    const ball = g.throwBall();
+    ball.body.position.set(0, 1.9, -3.0); ball.body.velocity.set(0, 0, -8);
+    let minZ = 0, bounced = false;
+    for (let i = 0; i < 90; i++) { await frame(); minZ = Math.min(minZ, ball.body.position.z); if (ball.body.velocity.z > 0.5) bounced = true; }
+    return { minZ, bounced };
+  });
+  assert.ok(r.minZ > -4.55, `ball went through the back wall (reached z=${r.minZ})`);
+  assert.ok(r.bounced, 'ball should rebound off the wall');
+  await page.close();
+});
+
+test('scene: the arc preview stops at the counter and at the back wall', async () => {
+  const { page } = await openPage();
+  const r = await page.evaluate(() => {
+    const g = window.game, T = g.THREE;
+    const low = g.predictArc(new T.Vector3(0, 1.0, -1), new T.Vector3(0, -0.1, -8));
+    const high = g.predictArc(new T.Vector3(0, 1.9, -1), new T.Vector3(0, 0.5, -9));
+    return { low: { z: low.landing.z, y: low.landing.y, wall: low.wall }, high: { z: high.landing.z, wall: high.wall } };
+  });
+  assert.ok(r.low.z > -2.35 && r.low.z < -2.15 && !r.low.wall, `counter landing: ${JSON.stringify(r.low)}`);
+  assert.ok(r.high.wall && r.high.z > -4.6 && r.high.z < -4.3, `wall landing: ${JSON.stringify(r.high)}`);
+  await page.close();
+});
+
+test('scene: cans use the design model at the real size (6.6 x 12.2 cm) with a coloured label band', async () => {
+  const { page } = await openPage();
+  const r = await page.evaluate(() => {
+    const g = window.game, box = new g.THREE.Box3().setFromObject(g.cans[0].mesh), s = box.getSize(new g.THREE.Vector3());
+    return { w: s.x, h: s.y, parts: g.cans[0].mesh.children.length, labels: new Set(g.cans.map(c => c.mesh.children[1].material.color.getHexString())).size };
+  });
+  assert.ok(Math.abs(r.h - 0.122) < 0.01, `can height ${r.h}`);
+  assert.ok(Math.abs(r.w - 0.066) < 0.008, `can width ${r.w}`);
+  assert.strictEqual(r.parts, 3, 'body, label band and rim');
+  assert.strictEqual(r.labels, 3, 'coral, teal and sunshine labels');
+  await page.close();
+});
+
+test('scene: static scenery is merged into few meshes (Quest draw-call budget)', async () => {
+  const { page } = await openPage();
+  const r = await page.evaluate(() => {
+    let meshes = 0; window.game.scene.traverse(o => { if (o.isMesh) meshes++; });
+    return { meshes, calls: (window.game.renderer.render(window.game.scene, window.game.camera), window.game.renderer.info.render.calls) };
+  });
+  assert.ok(r.meshes < 160, `scene has ${r.meshes} meshes`);
+  assert.ok(r.calls < 220, `${r.calls} draw calls in a frame`);
+  await page.close();
+});
+
+test('scene: the player stands on a mat at the throw line, the ball stand and can table keep their real positions', async () => {
+  const { page } = await openPage();
+  await settle(page, 1200);
+  const r = await page.evaluate(() => {
+    const g = window.game;
+    return { slotZ: g.balls.filter(b => b.slot !== null).map(b => +b.body.position.z.toFixed(2)), slotY: g.balls.filter(b => b.slot !== null).map(b => b.body.position.y > 0.9),
+             canZ: [...new Set(g.cans.map(c => +c.body.position.z.toFixed(1)))], canMinY: Math.min(...g.cans.map(c => c.body.position.y)) };
+  });
+  assert.deepStrictEqual([...new Set(r.slotZ)], [-0.8]);
+  assert.ok(r.slotY.every(Boolean), 'balls rest on top of the stand');
+  assert.deepStrictEqual(r.canZ, [-4]);
+  assert.ok(r.canMinY > 0.9, 'cans stand on the table top');
   await page.close();
 });
