@@ -1,4 +1,4 @@
-// Browser tests. CDN scripts are served from node_modules so tests are offline and deterministic.
+// Browser tests. three / cannon-es are served from node_modules (offline, deterministic).
 // Run: npm install && npm test   (set CHROMIUM_PATH if Playwright's browser isn't installed)
 const test = require('node:test');
 const assert = require('node:assert');
@@ -8,12 +8,10 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const root = path.join(__dirname, '..');
-// A-Frame comes from node_modules. The physics script is fetched from its CDN unless
-// PHYSICS_JS points at a local copy (useful offline: `npm pack aframe-physics-system@4.0.1`).
-const LOCAL = {
-  'aframe.min.js': path.join(root, 'node_modules/aframe/dist/aframe-v1.0.4.min.js'),
-};
-if (process.env.PHYSICS_JS) LOCAL['aframe-physics-system.min.js'] = process.env.PHYSICS_JS;
+const CDN = [
+  [/^https:\/\/cdn\.jsdelivr\.net\/npm\/three@0\.160\.0\/(.*)$/, 'node_modules/three/'],
+  [/^https:\/\/cdn\.jsdelivr\.net\/npm\/cannon-es@0\.20\.0\/(.*)$/, 'node_modules/cannon-es/'],
+];
 
 let server, browser, base;
 test.before(async () => {
@@ -31,49 +29,70 @@ test.before(async () => {
 test.after(async () => { await browser?.close(); server?.close(); });
 
 async function openPage() {
-  const page = await browser.newPage();
+  const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
-  // Hand-controller models come from cdn.aframe.io and are blocked in this harness; ignore only those.
-  page.on('console', m => { if (m.type() === 'error' && !/ProgressEvent|Failed to load resource|Failed to fetch/.test(m.text())) errors.push(m.text()); });
+  page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   await page.route('**/*', route => {
     const url = route.request().url();
     if (url.startsWith(base)) return route.continue();
-    const file = Object.keys(LOCAL).find(k => url.endsWith(k));
-    if (file) return route.fulfill({ path: LOCAL[file], contentType: 'text/javascript' });
-    if (/aframe-physics-system/.test(url)) return route.continue();
-    return route.abort(); // any other remote request is a bug (see static test)
+    for (const [re, dir] of CDN) {
+      const m = url.match(re);
+      if (m) return route.fulfill({ path: path.join(root, dir, m[1]), contentType: 'text/javascript' });
+    }
+    return route.abort(); // any other remote request is a bug
   });
   await page.goto(base);
-  await page.waitForFunction(() =>
-    document.querySelectorAll('.grabbable').length === 4 &&
-    [...document.querySelectorAll('.grabbable, #canTower > *')].every(e => e.body), null, { timeout: 20000 });
+  await page.waitForFunction(() => window.game && window.game.cans.length === 10 && window.game.balls.length === 4,
+    null, { timeout: 20000 });
   return { page, errors };
 }
 const settle = (page, ms = 2500) => page.waitForTimeout(ms);
-const state = page => page.evaluate(() => ({
-  cans: [...document.querySelectorAll('#canTower > *')].map(e => e.body.position.toArray ? e.body.position.toArray() : [e.body.position.x, e.body.position.y, e.body.position.z]),
-  balls: [...document.querySelectorAll('.grabbable')].map(e => [e.body.position.x, e.body.position.y, e.body.position.z]),
+const snap = page => page.evaluate(() => ({
+  cans: window.game.cans.map(c => [c.body.position.x, c.body.position.y, c.body.position.z]),
+  balls: window.game.balls.map(b => [b.body.position.x, b.body.position.y, b.body.position.z]),
 }));
 
 test('page loads with no errors', async () => {
   const { page, errors } = await openPage();
+  await settle(page, 1000);
   assert.deepStrictEqual(errors, []);
   await page.close();
 });
 
-test('10 cans (6/3/1) and 4 balls are created with physics bodies', async () => {
+test('WebXR is enabled and both controllers are in the scene', async () => {
   const { page } = await openPage();
-  assert.strictEqual(await page.locator('#canTower > *').count(), 10);
-  assert.strictEqual(await page.locator('.grabbable').count(), 4);
+  const r = await page.evaluate(() => ({
+    xr: window.game.renderer.xr.enabled,
+    hands: window.game.hands.length,
+    inScene: window.game.hands.every(h => { let p = h.ctrl; while (p.parent) p = p.parent; return p === window.game.scene; }),
+    canvas: !!document.querySelector('canvas'),
+  }));
+  assert.deepStrictEqual(r, { xr: true, hands: 2, inScene: true, canvas: true });
+  await page.close();
+});
+
+test('the scene actually renders (canvas is not blank)', async () => {
+  const { page } = await openPage();
+  await settle(page, 1000);
+  const shot = await page.screenshot();
+  // sky blue background + objects: a blank/black canvas would have a single colour
+  const { PNG } = (() => { try { return require('pngjs'); } catch { return {}; } })();
+  if (!PNG) { assert.ok(shot.length > 5000, 'screenshot suspiciously small'); }
+  else {
+    const png = PNG.sync.read(shot);
+    const colours = new Set();
+    for (let i = 0; i < png.data.length; i += 4 * 97) colours.add(png.data.slice(i, i + 3).join(','));
+    assert.ok(colours.size > 5, 'canvas looks blank');
+  }
   await page.close();
 });
 
 test('cans sit stably on the table (physics works, nothing falls or drifts)', async () => {
   const { page } = await openPage();
-  const before = await state(page);
+  const before = await snap(page);
   await settle(page, 3000);
-  const after = await state(page);
+  const after = await snap(page);
   after.cans.forEach((p, i) => {
     assert.ok(p[1] > 0.8, `can ${i} fell below table top: y=${p[1]}`);
     assert.ok(Math.abs(p[0] - before.cans[i][0]) < 0.05, `can ${i} drifted in x`);
@@ -85,20 +104,21 @@ test('cans sit stably on the table (physics works, nothing falls or drifts)', as
 test('balls rest on the pedestal instead of falling through', async () => {
   const { page } = await openPage();
   await settle(page);
-  const { balls } = await state(page);
+  const { balls } = await snap(page);
   balls.forEach((p, i) => assert.ok(p[1] > 0.9, `ball ${i} fell: y=${p[1]}`));
   await page.close();
 });
 
-test('gravity is active: a thrown ball (mouse click) arcs down and knocks cans', async () => {
+test('a thrown ball (mouse click) falls under gravity and knocks cans over', async () => {
   const { page } = await openPage();
   await settle(page);
-  const before = await state(page);
-  // aim at the table from the origin and click to throw several balls
+  const before = await snap(page);
+  // aim at the table: camera looks down -z already
   for (let i = 0; i < 4; i++) { await page.mouse.click(400, 300); await page.waitForTimeout(400); }
   await settle(page, 3000);
-  const after = await state(page);
-  const moved = after.cans.filter((p, i) => Math.hypot(p[0]-before.cans[i][0], p[2]-before.cans[i][2]) > 0.1 || p[1] < before.cans[i][1] - 0.1);
+  const after = await snap(page);
+  const moved = after.cans.filter((p, i) =>
+    Math.hypot(p[0] - before.cans[i][0], p[2] - before.cans[i][2]) > 0.1 || p[1] < before.cans[i][1] - 0.1);
   assert.ok(moved.length > 0, 'no can was disturbed by thrown balls');
   await page.close();
 });
@@ -107,30 +127,29 @@ test('grabbing: trigger near a ball picks it up, it follows the hand, release th
   const { page } = await openPage();
   await settle(page);
   const r = await page.evaluate(async () => {
-    const hand = document.querySelector('#rightHand');
-    const ball = document.querySelector('.grabbable');
-    const bp = ball.object3D.getWorldPosition(new THREE.Vector3());
-    hand.object3D.position.copy(bp).add(new THREE.Vector3(0.05, 0, 0)); // within reach
+    const { hands, balls, THREE } = window.game;
+    // three drives controllers from the XR session (matrixAutoUpdate=false); outside VR we drive them by hand
+    hands.forEach(h => { h.ctrl.matrixAutoUpdate = true; });
+    const hand = hands[1], ball = balls[0];
     const wait = ms => new Promise(r => setTimeout(r, ms));
-    await wait(100);
-    hand.emit('triggerdown');
-    await wait(100);
-    const grabbed = ball.heldBy === hand.components['hand-grabber'];
-    hand.object3D.position.y += 0.5;           // lift hand
-    await wait(300);
-    const follows = Math.abs(ball.body.position.y - hand.object3D.position.y) < 0.05;
-    // fling toward -z
-    // move at a fixed 4 m/s regardless of the (possibly slow, software-rendered) frame rate
     const frame = () => new Promise(r => requestAnimationFrame(r));
+    hand.ctrl.position.copy(ball.mesh.position).add(new THREE.Vector3(0.05, 0, 0)); // within reach
+    await frame();
+    hand.ctrl.dispatchEvent({ type: 'selectstart' });
+    const grabbed = hand.held === ball && ball.heldBy === hand;
+    hand.ctrl.position.y += 0.5;
+    await wait(300);
+    const follows = Math.abs(ball.body.position.y - hand.ctrl.position.y) < 0.05;
+    // move at a fixed 4 m/s regardless of the (possibly slow, software-rendered) frame rate
     let last = performance.now();
     for (let i = 0; i < 12; i++) {
       await frame();
       const now = performance.now();
-      hand.object3D.position.z -= 4 * (now - last) / 1000;
+      hand.ctrl.position.z -= 4 * (now - last) / 1000;
       last = now;
     }
-    hand.emit('triggerup');
-    return { grabbed, follows, released: !ball.heldBy, vz: ball.body.velocity.z };
+    hand.ctrl.dispatchEvent({ type: 'selectend' });
+    return { grabbed, follows, released: !ball.heldBy && !hand.held, vz: ball.body.velocity.z };
   });
   assert.ok(r.grabbed, 'ball not grabbed');
   assert.ok(r.follows, 'ball did not follow the hand');
@@ -139,27 +158,57 @@ test('grabbing: trigger near a ball picks it up, it follows the hand, release th
   await page.close();
 });
 
-test('grabbing: a ball out of reach is NOT picked up', async () => {
+test('grip (squeeze) also grabs, and each ball can only be held by one hand', async () => {
   const { page } = await openPage();
   await settle(page);
-  const grabbed = await page.evaluate(() => {
-    const hand = document.querySelector('#leftHand');
-    hand.object3D.position.set(3, 1, 3);
-    hand.emit('triggerdown');
-    return !!hand.components['hand-grabber'].held;
+  const r = await page.evaluate(async () => {
+    const { hands, balls } = window.game;
+    const frame = () => new Promise(r => requestAnimationFrame(r));
+    hands.forEach(h => { h.ctrl.matrixAutoUpdate = true; });
+    hands[0].ctrl.position.copy(balls[1].mesh.position);
+    hands[1].ctrl.position.copy(balls[1].mesh.position);
+    await frame();
+    hands[0].ctrl.dispatchEvent({ type: 'squeezestart' });
+    hands[1].ctrl.dispatchEvent({ type: 'squeezestart' });
+    return { first: hands[0].held === balls[1], second: hands[1].held === balls[1] };
   });
-  assert.strictEqual(grabbed, false);
+  assert.strictEqual(r.first, true);
+  assert.strictEqual(r.second, false);
+  await page.close();
+});
+
+test('a ball out of reach is NOT picked up', async () => {
+  const { page } = await openPage();
+  await settle(page);
+  const held = await page.evaluate(() => {
+    const h = window.game.hands[0];
+    h.ctrl.matrixAutoUpdate = true;
+    h.ctrl.position.set(3, 1, 3);
+    h.ctrl.dispatchEvent({ type: 'selectstart' });
+    return !!h.held;
+  });
+  assert.strictEqual(held, false);
+  await page.close();
+});
+
+test('a ball that falls off the world respawns on the pedestal', async () => {
+  const { page } = await openPage();
+  await settle(page, 1000);
+  await page.evaluate(() => { const b = window.game.balls[0]; b.body.position.set(5, -10, 5); });
+  await page.waitForTimeout(1500);
+  const { balls } = await snap(page);
+  assert.ok(balls[0][1] > 0.9, `ball did not respawn: y=${balls[0][1]}`);
   await page.close();
 });
 
 test('Reset button rebuilds cans and balls', async () => {
   const { page } = await openPage();
-  await page.evaluate(() => { document.querySelector('#canTower > *').body.position.set(5, 5, 5); });
+  await page.evaluate(() => { window.game.cans[0].body.position.set(5, 5, 5); window.game.throwBall(); });
   await page.click('#resetBtn');
-  await page.waitForFunction(() => [...document.querySelectorAll('#canTower > *')].length === 10 &&
-    [...document.querySelectorAll('#canTower > *')].every(e => e.body), null, { timeout: 10000 });
+  const counts = await page.evaluate(() => [window.game.cans.length, window.game.balls.length]);
+  assert.deepStrictEqual(counts, [10, 4]);
   await settle(page, 1500);
-  const { cans } = await state(page);
+  const { cans } = await snap(page);
   assert.ok(cans.every(p => Math.abs(p[0]) < 1.2 && p[1] > 0.8), 'cans not back on the table');
   await page.close();
 });

@@ -1,48 +1,44 @@
-// Fast checks that need no browser: catch broken URLs/syntax before they hit a headset.
+// Fast checks that need no browser.
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-const inlineScript = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]).join('\n');
+const moduleSrc = html.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
+const importMap = JSON.parse(html.match(/<script type="importmap">([\s\S]*?)<\/script>/)[1]).imports;
 
-test('inline script has valid syntax', () => {
-  assert.doesNotThrow(() => new Function(inlineScript));
+test('module script has valid syntax', () => {
+  // strip static imports, then parse the rest as an async function body
+  const body = moduleSrc.replace(/^import .*$/gm, '');
+  assert.doesNotThrow(() => new (Object.getPrototypeOf(async function () {}).constructor)(body));
 });
 
-test('external scripts are version-pinned (no master/latest)', () => {
-  const srcs = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map(m => m[1]);
-  assert.ok(srcs.length >= 2, 'expected A-Frame + physics scripts');
-  for (const s of srcs) {
-    assert.match(s, /@\d+\.\d+\.\d+|\/releases\/\d+\.\d+\.\d+\//, `unpinned script: ${s}`);
+test('import map pins exact versions (no latest / master)', () => {
+  for (const name of ['three', 'cannon-es']) {
+    assert.match(importMap[name], /@\d+\.\d+\.\d+\//, `${name} is not version-pinned: ${importMap[name]}`);
+  }
+  assert.match(importMap['three/addons/'], /three@\d+\.\d+\.\d+\//);
+});
+
+test('every bare import has an import-map entry', () => {
+  for (const m of moduleSrc.matchAll(/^import .* from '([^']+)'/gm)) {
+    const spec = m[1];
+    const ok = importMap[spec] || Object.keys(importMap).some(k => k.endsWith('/') && spec.startsWith(k));
+    assert.ok(ok, `no import-map entry for ${spec}`);
   }
 });
 
-test('page loads no remote images/textures that can fail and blank the scene', () => {
+test('no remote textures/images that could fail and blank the scene', () => {
   assert.doesNotMatch(html, /<img[^>]+src="https?:/);
-  assert.doesNotMatch(html, /<a-sky[^>]+src=/);
+  assert.doesNotMatch(moduleSrc, /TextureLoader|\.jpg|\.png/);
 });
 
-test('scene has lights, a camera, and two hands with hand-grabber', () => {
-  assert.match(html, /light="type: ambient/);
-  assert.match(html, /light="type: directional/);
-  assert.match(html, /\bcamera\b/);
-  assert.strictEqual((html.match(/hand-grabber/g) || []).length >= 3, true); // registration + 2 hands
-});
-
-test('every dynamic/static body component used is provided by the physics system', () => {
-  assert.match(html, /aframe-physics-system/);
-  assert.match(html, /dynamic-body|static-body/);
-});
-
-test('A-Frame version is compatible with aframe-physics-system 4.0.1 (needs THREE.Geometry => A-Frame 1.0.x)', () => {
-  const v = html.match(/aframe\.io\/releases\/(\d+)\.(\d+)\.(\d+)\/aframe/);
-  assert.ok(v, 'A-Frame script not found');
-  assert.ok(+v[1] === 1 && +v[2] === 0, `A-Frame ${v.slice(1).join('.')} breaks the physics system (THREE.Geometry/THREE.Math removed)`);
-});
-
-test('hand-grabber is registered before <a-scene> is parsed (otherwise the hands never get it)', () => {
-  const reg = html.indexOf("registerComponent('hand-grabber'");
-  assert.ok(reg > -1 && reg < html.indexOf('<a-scene'), 'register hand-grabber in <head>, before the scene');
+test('WebXR is wired up: xr enabled, VRButton, local-floor, two controllers, lights', () => {
+  assert.match(moduleSrc, /renderer\.xr\.enabled\s*=\s*true/);
+  assert.match(moduleSrc, /VRButton\.createButton/);
+  assert.match(moduleSrc, /setReferenceSpaceType\('local-floor'\)/);
+  assert.match(moduleSrc, /getController\(i\)/);
+  assert.match(moduleSrc, /HemisphereLight|AmbientLight/);
+  assert.match(moduleSrc, /setAnimationLoop/);
 });

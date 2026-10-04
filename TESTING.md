@@ -2,16 +2,15 @@
 
 ```
 npm install
-npx playwright install chromium   # once
+npx playwright install chromium   # once (or set CHROMIUM_PATH)
 npm test
 ```
 
-- `test/static.test.js` – fast checks (syntax, pinned CDN versions, no remote textures, component order, A-Frame/physics compatibility).
-- `test/e2e.test.js` – headless-browser checks: no console errors, cans stay on the table, balls rest on the pedestal, thrown balls hit cans, grab/throw works, Reset works.
+three.js and cannon-es are served from `node_modules` during the browser tests, so they run offline.
 
-Offline: `npm pack aframe-physics-system@4.0.1`, extract it, and run with
-`PHYSICS_JS=<path>/package/dist/aframe-physics-system.min.js npm test`.
-Set `CHROMIUM_PATH` to use a specific Chromium binary.
+- `test/static.test.js` – syntax, pinned import-map versions, no remote textures, WebXR wiring.
+- `test/e2e.test.js` – headless Chromium: no console errors, canvas renders, cans stay on the table,
+  balls rest on the pedestal, thrown balls hit cans, grab/throw (trigger and grip), respawn, Reset.
 
-Note: `aframe-physics-system` 4.0.1 needs A-Frame 1.0.x (it uses `THREE.Geometry`/`THREE.Math`,
-removed in newer three.js). Don't bump A-Frame without replacing the physics library.
+WebXR itself can't run headless; the tests simulate controller `selectstart/selectend/squeezestart/squeezeend`
+events. Entering VR on a real headset still needs a manual check (needs HTTPS or localhost).

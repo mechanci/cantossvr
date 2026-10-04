@@ -2,194 +2,330 @@
 <html>
 <head>
   <title>VR Can Toss</title>
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://aframe.io/releases/1.0.4/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/aframe-physics-system@4.0.1/dist/aframe-physics-system.min.js"></script>
-  <script>
-  const GRAB_RANGE = 0.3;
-
-  // Grab with trigger or grip: nearest ball within reach follows the hand,
-  // and is released with the hand's velocity so it can be thrown.
-  AFRAME.registerComponent('hand-grabber', {
-    init: function () {
-      this.held = null;
-      this.prev = new THREE.Vector3();
-      this.pos = new THREE.Vector3();
-      this.vel = new THREE.Vector3();
-      this.hasPrev = false;
-      ['triggerdown', 'gripdown'].forEach(e => this.el.addEventListener(e, () => this.grab()));
-      ['triggerup', 'gripup'].forEach(e => this.el.addEventListener(e, () => this.release()));
-    },
-    grab: function () {
-      if (this.held) return;
-      this.el.object3D.getWorldPosition(this.pos);
-      let best = null, bestD = GRAB_RANGE;
-      const p = new THREE.Vector3();
-      document.querySelectorAll('.grabbable').forEach(b => {
-        if (!b.body || b.heldBy) return;
-        b.object3D.getWorldPosition(p);
-        const d = p.distanceTo(this.pos);
-        if (d < bestD) { best = b; bestD = d; }
-      });
-      if (best) { this.held = best; best.heldBy = this; }
-    },
-    release: function () {
-      const b = this.held;
-      if (!b) return;
-      this.held = null;
-      b.heldBy = null;
-      if (b.body) {
-        b.body.velocity.set(this.vel.x, this.vel.y, this.vel.z);
-        b.body.wakeUp();
-      }
-    },
-    tick: function (t, dt) {
-      if (!dt) return;
-      this.el.object3D.getWorldPosition(this.pos);
-      if (this.hasPrev) {
-        // smoothed hand velocity in m/s
-        const inst = this.pos.clone().sub(this.prev).multiplyScalar(1000 / dt);
-        this.vel.lerp(inst, 0.5);
-      }
-      this.prev.copy(this.pos);
-      this.hasPrev = true;
-      const b = this.held;
-      if (b && b.body) {
-        b.body.position.set(this.pos.x, this.pos.y, this.pos.z);
-        b.body.velocity.set(0, 0, 0);
-        b.body.angularVelocity.set(0, 0, 0);
-      }
-    }
-  });
-  </script>
   <style>
-    body { margin: 0; overflow: hidden; }
+    body { margin: 0; overflow: hidden; background: #87CEEB; }
+    canvas { display: block; }
     #resetBtn {
       position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
       z-index: 999; padding: 12px 24px; font-size: 18px; font-family: sans-serif;
       background: #222; color: white; border: none; border-radius: 8px; cursor: pointer;
     }
+    #help {
+      position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%); z-index: 999;
+      color: #fff; font: 14px sans-serif; text-shadow: 0 1px 3px #000; text-align: center; pointer-events: none;
+    }
   </style>
-</head>
-<body>
-<button id="resetBtn" onclick="resetScene()">Reset Cans</button>
-
-<a-scene physics="debug: false; gravity: -9.8; friction: 0.6; restitution: 0.05; iterations: 20; maxInterval: 0.0167" background="color: #87CEEB" webxr="optionalFeatures: local-floor">
-
-  <!-- Explicit lights so objects are lit in VR too -->
-  <a-entity light="type: ambient; color: #fff; intensity: 0.7"></a-entity>
-  <a-entity light="type: directional; color: #fff; intensity: 0.8" position="-1 4 2"></a-entity>
-
-  <!-- Ground -->
-  <a-box position="0 -0.05 -3" width="20" height="0.1" depth="30"
-    color="#4a7c3f" static-body></a-box>
-
-  <!-- Target table (top surface at y = 0.8) -->
-  <a-box id="table" position="0 0.4 -4" width="2.2" height="0.8" depth="0.9"
-    color="#8b5a2b" static-body></a-box>
-
-  <!-- Cans (built by script, resting on the table) -->
-  <a-entity id="canTower"></a-entity>
-
-  <!-- Throwing line marker -->
-  <a-ring position="0 0.01 -1" rotation="-90 0 0" radius-inner="0.4" radius-outer="0.5" color="white"></a-ring>
-
-  <!-- Pedestal holding the balls (top at y = 0.9) -->
-  <a-cylinder position="0 0.45 -0.8" radius="0.4" height="0.9" color="#555"
-    static-body="shape: none" shape="shape: cylinder; radiusTop: 0.4; radiusBottom: 0.4; height: 0.9"></a-cylinder>
-  <a-entity id="balls"></a-entity>
-
-  <a-sky color="#87CEEB" radius="150"></a-sky>
-
-  <!-- Camera rig with hand controls -->
-  <a-entity id="rig" position="0 0 0">
-    <a-entity camera="far: 200" position="0 1.6 0" look-controls wasd-controls></a-entity>
-    <a-entity id="leftHand" hand-controls="hand: left" hand-grabber></a-entity>
-    <a-entity id="rightHand" hand-controls="hand: right" hand-grabber></a-entity>
-  </a-entity>
-
-</a-scene>
-
-<script>
-  const BALL_RADIUS = 0.1;
-  const TABLE_TOP = 0.8;
-  const PEDESTAL_TOP = 0.9;
-
-  function makeBall(x, y, z) {
-    const ball = document.createElement('a-sphere');
-    ball.setAttribute('radius', BALL_RADIUS);
-    ball.setAttribute('color', '#f1c34e');
-    ball.setAttribute('position', `${x} ${y} ${z}`);
-    // Explicit shapes: the physics system's auto-shape code uses THREE.Geometry, which
-    // A-Frame >= 1.2 (three.js r125+) no longer has;
-    // aframe-physics-system 4.0.1 only works with A-Frame 1.0.x.
-    ball.setAttribute('dynamic-body', 'mass: 0.3; shape: none; linearDamping: 0.05; angularDamping: 0.2');
-    ball.setAttribute('shape', `shape: sphere; radius: ${BALL_RADIUS}`);
-    ball.classList.add('grabbable');
-    document.getElementById('balls').appendChild(ball);
-    return ball;
-  }
-
-  function spawnBalls() {
-    document.getElementById('balls').innerHTML = '';
-    for (let i = 0; i < 4; i++) {
-      makeBall(i * 0.2 - 0.3, PEDESTAL_TOP + BALL_RADIUS + 0.02, -0.8);
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+      "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
     }
   }
+  </script>
+</head>
+<body>
+<button id="resetBtn">Reset Cans</button>
+<div id="help">VR: trigger or grip near a ball to pick it up, release to throw &middot; A/B button resets.<br>
+Desktop: click to throw, drag to look, WASD to move.</div>
 
-  // Pyramid of 6 / 3 / 1 cans sitting on the table
-  function buildTower() {
-    const tower = document.getElementById('canTower');
-    tower.innerHTML = '';
-    const r = 0.15, h = 0.3, gap = 0.002;
-    const s = r * 2 + 0.03; // centre spacing within a row
-    let id = 0;
-    const add = (x, y, z) => {
-      const can = document.createElement('a-cylinder');
-      can.setAttribute('radius', r);
-      can.setAttribute('height', h);
-      can.setAttribute('color', id++ % 2 === 0 ? '#c0392b' : '#bdc3c7');
-      can.setAttribute('position', `${x} ${y} ${z}`);
-      can.setAttribute('dynamic-body', 'mass: 0.3; shape: none; linearDamping: 0.1; angularDamping: 0.3');
-      // Box collider (slightly inside the visual cylinder): cannon's cylinder-cylinder
-      // contacts jitter, which makes stacked cans creep and topple on their own.
-      const he = r * 0.97;
-      can.setAttribute('shape', `shape: box; halfExtents: ${he} ${h / 2} ${he}`);
-      tower.appendChild(can);
-    };
-    const y0 = TABLE_TOP + h / 2 + gap;
-    for (let i = 0; i < 6; i++) add((i - 2.5) * s, y0, -4);
-    for (let i = 0; i < 3; i++) add((i - 1) * 2 * s, y0 + h + gap, -4);
-    add(0, y0 + 2 * (h + gap), -4);
-  }
+<script type="module">
+import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
-  function resetScene() {
-    buildTower();
-    spawnBalls();
-  }
+const BALL_RADIUS = 0.1;
+const GRAB_RANGE = 0.3;
+const TABLE_TOP = 0.8;
+const PEDESTAL_TOP = 0.9;
+const CAN_R = 0.15, CAN_H = 0.3;
 
-  const sceneEl = document.querySelector('a-scene');
-  sceneEl.addEventListener('loaded', resetScene);
+// ---------- renderer / scene / camera ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
 
-  // Desktop fallback: click to throw a ball from the camera
-  const thrown = [];
-  sceneEl.addEventListener('loaded', () => {
-    window.addEventListener('mousedown', e => {
-      if (sceneEl.is('vr-mode') || e.target.id === 'resetBtn') return;
-      const cam = sceneEl.camera.el.object3D;
-      const p = new THREE.Vector3(), d = new THREE.Vector3();
-      cam.getWorldPosition(p);
-      cam.getWorldDirection(d); d.negate();
-      p.addScaledVector(d, 0.4);
-      const ball = makeBall(p.x, p.y, p.z);
-      thrown.push(ball);
-      ball.addEventListener('body-loaded', () => {
-        ball.body.velocity.set(d.x * 9, d.y * 9 + 1.5, d.z * 9);
-      });
-      if (thrown.length > 10) thrown.shift().remove();
-    });
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x4a7c3f, 1.0));
+const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+sun.position.set(-1, 4, 2);
+scene.add(sun);
+
+// The rig moves the player; in VR the headset pose is applied to the camera inside it.
+const rig = new THREE.Group();
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 200);
+camera.position.set(0, 1.6, 0);
+camera.rotation.order = 'YXZ';
+rig.add(camera);
+scene.add(rig);
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ---------- physics ----------
+const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.8, 0) });
+world.solver.iterations = 20;
+world.defaultContactMaterial.friction = 0.6;
+world.defaultContactMaterial.restitution = 0.05;
+
+const dynamics = []; // { mesh, body }
+
+function addStaticBox(w, h, d, x, y, z, color) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color }));
+  mesh.position.set(x, y, z);
+  scene.add(mesh);
+  const body = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(w / 2, h / 2, d / 2)) });
+  body.position.set(x, y, z);
+  world.addBody(body);
+  return { mesh, body };
+}
+
+// ground (visual + infinite plane collider)
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 60), new THREE.MeshStandardMaterial({ color: 0x4a7c3f }));
+ground.rotation.x = -Math.PI / 2;
+ground.position.set(0, 0, -3);
+scene.add(ground);
+const groundBody = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
+groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+world.addBody(groundBody);
+
+// target table (top at y = 0.8) and ball pedestal (top at y = 0.9)
+addStaticBox(2.2, TABLE_TOP, 0.9, 0, TABLE_TOP / 2, -4, 0x8b5a2b);
+addStaticBox(1.0, PEDESTAL_TOP, 0.5, 0, PEDESTAL_TOP / 2, -0.8, 0x555555);
+
+// throwing line marker
+const ring = new THREE.Mesh(new THREE.RingGeometry(0.4, 0.5, 32), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+ring.rotation.x = -Math.PI / 2;
+ring.position.set(0, 0.01, -1.6);
+scene.add(ring);
+
+// ---------- cans and balls ----------
+const cans = [];
+const balls = [];
+
+function track(mesh, body, list) {
+  scene.add(mesh);
+  world.addBody(body);
+  const item = { mesh, body, heldBy: null };
+  dynamics.push(item);
+  list.push(item);
+  return item;
+}
+
+function removeItem(item, list) {
+  scene.remove(item.mesh);
+  item.mesh.geometry.dispose();
+  item.mesh.material.dispose();
+  world.removeBody(item.body);
+  dynamics.splice(dynamics.indexOf(item), 1);
+  list.splice(list.indexOf(item), 1);
+}
+
+function makeCan(x, y, z, i) {
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(CAN_R, CAN_R, CAN_H, 24),
+    new THREE.MeshStandardMaterial({ color: i % 2 === 0 ? 0xc0392b : 0xbdc3c7 }));
+  // Box collider slightly inside the visual cylinder: cannon's cylinder contacts jitter,
+  // which makes stacked cans creep and topple on their own.
+  const he = CAN_R * 0.97;
+  const body = new CANNON.Body({
+    mass: 0.3, linearDamping: 0.1, angularDamping: 0.3,
+    shape: new CANNON.Box(new CANNON.Vec3(he, CAN_H / 2, he)),
   });
-</script>
+  body.position.set(x, y, z);
+  return track(mesh, body, cans);
+}
 
+function makeBall(x, y, z) {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(BALL_RADIUS, 24, 16),
+    new THREE.MeshStandardMaterial({ color: 0xf1c34e }));
+  const body = new CANNON.Body({
+    mass: 0.3, linearDamping: 0.05, angularDamping: 0.2,
+    shape: new CANNON.Sphere(BALL_RADIUS),
+  });
+  body.position.set(x, y, z);
+  const item = track(mesh, body, balls);
+  item.home = [x, y, z];
+  return item;
+}
+
+// Pyramid of 6 / 3 / 1 cans sitting on the table
+function buildTower() {
+  while (cans.length) removeItem(cans[0], cans);
+  const s = CAN_R * 2 + 0.03, gap = 0.002;
+  const y0 = TABLE_TOP + CAN_H / 2 + gap;
+  let id = 0;
+  for (let i = 0; i < 6; i++) makeCan((i - 2.5) * s, y0, -4, id++);
+  for (let i = 0; i < 3; i++) makeCan((i - 1) * 2 * s, y0 + CAN_H + gap, -4, id++);
+  makeCan(0, y0 + 2 * (CAN_H + gap), -4, id++);
+}
+
+function spawnBalls() {
+  while (balls.length) {
+    if (balls[0].heldBy) balls[0].heldBy.held = null;
+    removeItem(balls[0], balls);
+  }
+  for (let i = 0; i < 4; i++) makeBall(i * 0.2 - 0.3, PEDESTAL_TOP + BALL_RADIUS + 0.02, -0.8);
+}
+
+function resetScene() {
+  buildTower();
+  spawnBalls();
+}
+document.getElementById('resetBtn').addEventListener('click', resetScene);
+
+// ---------- VR hands: grab with trigger or grip, throw on release ----------
+const hands = [];
+const tmp = new THREE.Vector3();
+const controllerModels = new XRControllerModelFactory();
+
+for (let i = 0; i < 2; i++) {
+  const ctrl = renderer.xr.getController(i);
+  const hand = { ctrl, held: null, prev: new THREE.Vector3(), vel: new THREE.Vector3(), hasPrev: false };
+  // visible "hand" marker so there is always something to see even if the model fails to load
+  ctrl.add(new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 12), new THREE.MeshStandardMaterial({ color: 0xffffff })));
+  rig.add(ctrl);
+  const grip = renderer.xr.getControllerGrip(i);
+  grip.add(controllerModels.createControllerModel(grip));
+  rig.add(grip);
+  for (const [down, up] of [['selectstart', 'selectend'], ['squeezestart', 'squeezeend']]) {
+    ctrl.addEventListener(down, () => grab(hand));
+    ctrl.addEventListener(up, () => release(hand));
+  }
+  hands.push(hand);
+}
+
+function grab(hand) {
+  if (hand.held) return;
+  hand.ctrl.getWorldPosition(tmp);
+  let best = null, bestD = GRAB_RANGE;
+  for (const b of balls) {
+    if (b.heldBy) continue;
+    const d = tmp.distanceTo(b.mesh.position);
+    if (d < bestD) { best = b; bestD = d; }
+  }
+  if (best) { hand.held = best; best.heldBy = hand; }
+}
+
+function release(hand) {
+  const b = hand.held;
+  if (!b) return;
+  hand.held = null;
+  b.heldBy = null;
+  b.body.velocity.set(hand.vel.x, hand.vel.y, hand.vel.z);
+  b.body.wakeUp();
+}
+
+function updateHands(dt) {
+  for (const h of hands) {
+    h.ctrl.getWorldPosition(tmp);
+    if (h.hasPrev && dt > 0) h.vel.lerp(tmp.clone().sub(h.prev).multiplyScalar(1 / dt), 0.5);
+    h.prev.copy(tmp);
+    h.hasPrev = true;
+    if (h.held) {
+      h.held.body.position.set(tmp.x, tmp.y, tmp.z);
+      h.held.body.velocity.set(0, 0, 0);
+      h.held.body.angularVelocity.set(0, 0, 0);
+    }
+  }
+}
+
+// A / B button resets the scene while in VR
+let resetLatch = false;
+function pollVRButtons() {
+  const session = renderer.xr.getSession();
+  if (!session) return;
+  let pressed = false;
+  for (const src of session.inputSources) {
+    const b = src.gamepad && src.gamepad.buttons;
+    if (b && ((b[4] && b[4].pressed) || (b[5] && b[5].pressed))) pressed = true;
+  }
+  if (pressed && !resetLatch) resetScene();
+  resetLatch = pressed;
+}
+
+// ---------- desktop fallback: drag to look, WASD to move, click to throw ----------
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.code] = true; });
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+let dragging = false, moved = 0, lastX = 0, lastY = 0;
+renderer.domElement.addEventListener('mousedown', e => { dragging = true; moved = 0; lastX = e.clientX; lastY = e.clientY; });
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+  moved += Math.abs(dx) + Math.abs(dy);
+  camera.rotation.y -= dx * 0.004;
+  camera.rotation.x = Math.max(-1.4, Math.min(1.4, camera.rotation.x - dy * 0.004));
+});
+window.addEventListener('mouseup', () => {
+  if (dragging && moved < 5 && !renderer.xr.isPresenting) throwBall();
+  dragging = false;
+});
+
+function throwBall(speed = 9) {
+  const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
+  const p = camera.getWorldPosition(new THREE.Vector3()).addScaledVector(dir, 0.4);
+  const ball = makeBall(p.x, p.y, p.z);
+  ball.thrown = true;
+  ball.body.velocity.set(dir.x * speed, dir.y * speed + 1.5, dir.z * speed);
+  const thrown = balls.filter(b => b.thrown);
+  if (thrown.length > 10) removeItem(thrown[0], balls);
+  return ball;
+}
+
+function moveDesktop(dt) {
+  if (renderer.xr.isPresenting) return;
+  const f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
+  const r = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+  if (!f && !r) return;
+  const yaw = camera.rotation.y;
+  rig.position.x += (-Math.sin(yaw) * f + Math.cos(yaw) * r) * 2 * dt;
+  rig.position.z += (-Math.cos(yaw) * f - Math.sin(yaw) * r) * 2 * dt;
+}
+
+// ---------- main loop ----------
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  moveDesktop(dt);
+  pollVRButtons();
+  updateHands(dt);
+  world.step(1 / 60, dt, 3);
+  for (const { mesh, body } of dynamics) {
+    mesh.position.copy(body.position);
+    mesh.quaternion.copy(body.quaternion);
+  }
+  // balls that roll off the world come back to the pedestal
+  for (const b of balls) {
+    if (b.body.position.y < -3 && !b.heldBy) {
+      if (b.thrown) { removeItem(b, balls); break; }
+      b.body.position.set(...b.home);
+      b.body.velocity.set(0, 0, 0);
+      b.body.angularVelocity.set(0, 0, 0);
+    }
+  }
+  renderer.render(scene, camera);
+});
+
+resetScene();
+
+// handle for tests / debugging
+window.game = { THREE, scene, camera, rig, renderer, world, cans, balls, hands, resetScene, throwBall, grab, release };
+</script>
 </body>
 </html>
