@@ -62,3 +62,14 @@ test('visuals: shadows, tone mapping and environment lighting are enabled', () =
   assert.match(moduleSrc, /toneMapping/);
   assert.match(moduleSrc, /scene\.environment/);
 });
+
+test('controller UI: guide text names every button, quit is available, no sphere over the controller', () => {
+  for (const word of ['TRIGGER', 'GRIP', 'Quit VR', 'Refill Balls', 'Reset Cans']) assert.ok(moduleSrc.includes(word), `missing "${word}"`);
+  assert.match(moduleSrc, /session\.end\(\)/);
+  assert.doesNotMatch(moduleSrc, /ctrl\.add\(new THREE\.Mesh\(new THREE\.SphereGeometry/);
+});
+
+test('can sound uses inharmonic metal partials and a per-can pitch', () => {
+  assert.match(moduleSrc, /CAN_PARTIALS/);
+  assert.match(moduleSrc, /body\.pitch\s*=/);
+});

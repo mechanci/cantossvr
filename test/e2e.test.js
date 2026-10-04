@@ -192,25 +192,177 @@ test('a ball out of reach is NOT picked up', async () => {
   await page.close();
 });
 
-test('a ball that falls off the world respawns on the pedestal', async () => {
+test('a ball that falls off the world is replaced on the stand', async () => {
   const { page } = await openPage();
   await settle(page, 1000);
-  await page.evaluate(() => { const b = window.game.balls[0]; b.body.position.set(5, -10, 5); });
-  await page.waitForTimeout(1500);
+  await page.evaluate(() => { window.game.balls[0].body.position.set(5, -10, 5); });
+  await page.waitForTimeout(2500);
   const { balls } = await snap(page);
-  assert.ok(balls[0][1] > 0.9, `ball did not respawn: y=${balls[0][1]}`);
+  assert.strictEqual(balls.length, 4);
+  balls.forEach((p, i) => assert.ok(p[1] > 0.9, `ball ${i} not on the stand: y=${p[1]}`));
   await page.close();
 });
 
-test('Reset button rebuilds cans and balls', async () => {
+test('10 cans and 4 balls are created with physics bodies', async () => {
   const { page } = await openPage();
-  await page.evaluate(() => { window.game.cans[0].body.position.set(5, 5, 5); window.game.throwBall(); });
+  assert.strictEqual(await page.evaluate(() => window.game.cans.length), 10);
+  assert.strictEqual(await page.evaluate(() => window.game.balls.length), 4);
+  await page.close();
+});
+
+test('Reset Cans rebuilds the pyramid and leaves the balls alone', async () => {
+  const { page } = await openPage();
+  await settle(page, 1000);
+  const before = await page.evaluate(() => { window.game.cans[0].body.position.set(5, 5, 5); window.game.throwBall(); return window.game.balls.length; });
   await page.click('#resetBtn');
-  const counts = await page.evaluate(() => [window.game.cans.length, window.game.balls.length]);
-  assert.deepStrictEqual(counts, [10, 4]);
+  const after = await page.evaluate(() => [window.game.cans.length, window.game.balls.length]);
+  assert.deepStrictEqual(after, [10, before]);
   await settle(page, 1500);
   const { cans } = await snap(page);
-  assert.ok(cans.every(p => Math.abs(p[0]) < 0.7 && p[1] > 0.9), 'cans not back on the table');
+  assert.ok(cans.every(p => Math.abs(p[0]) < 0.3 && p[1] > 0.9), 'cans not back on the counter');
+  await page.close();
+});
+
+test('Refill Balls restores the four balls on the stand', async () => {
+  const { page } = await openPage();
+  await settle(page, 1000);
+  await page.evaluate(() => { window.game.throwBall(); window.game.throwBall(); });
+  await page.click('#refillBtn');
+  const r = await page.evaluate(() => ({ n: window.game.balls.length, slots: window.game.slots.every(Boolean) }));
+  assert.deepStrictEqual(r, { n: 4, slots: true });
+  await page.close();
+});
+
+test('the cans form a triangle: rows of 4-3-2-1, each can centred on the two below', async () => {
+  const { page } = await openPage();
+  await settle(page, 2500);
+  const { cans } = await snap(page);
+  const rows = {};
+  cans.forEach(p => { (rows[Math.floor((p[1] - 0.9) / 0.123)] ||= []).push(p[0]); });
+  assert.deepStrictEqual(Object.keys(rows).map(k => rows[k].length), [4, 3, 2, 1]);
+  for (let r = 1; r < 4; r++) {
+    const below = rows[r - 1].sort((a, b) => a - b), here = rows[r].sort((a, b) => a - b);
+    here.forEach((x, i) => {
+      const mid = (below[i] + below[i + 1]) / 2;
+      assert.ok(Math.abs(x - mid) < 0.015, `row ${r} can ${i} is not centred on the two below (${x} vs ${mid})`);
+    });
+  }
+  await page.close();
+});
+
+test('taking a ball from the stand puts a new one in its place', async () => {
+  const { page } = await openPage();
+  await settle(page, 1000);
+  const r = await page.evaluate(async () => {
+    const { hands, balls, slots } = window.game;
+    const hand = hands[1];
+    hand.ctrl.matrixAutoUpdate = true;
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    hand.ctrl.position.copy(balls[0].mesh.position);
+    await wait(100);
+    hand.ctrl.dispatchEvent({ type: 'selectstart' });
+    const emptySlots = slots.filter(s => !s).length;
+    hand.ctrl.position.y += 0.5; // take it away from the stand
+    // sim time runs slower than wall time on a software renderer, so wait for it rather than a fixed time
+    for (let i = 0; i < 300 && !slots.every(Boolean); i++) await wait(50);
+    return { emptySlots, filled: slots.every(Boolean), total: balls.length };
+  });
+  assert.strictEqual(r.emptySlots, 1);
+  assert.ok(r.filled, 'slot was not refilled');
+  assert.strictEqual(r.total, 5); // 4 on the stand + the one in hand
+  await page.close();
+});
+
+test('controllers show the real model: no ball/sphere is drawn over them', async () => {
+  const { page } = await openPage();
+  const r = await page.evaluate(() => window.game.hands.map(h => ({
+    spheres: h.ctrl.children.filter(c => c.geometry && c.geometry.type === 'SphereGeometry').length,
+    kinds: h.ctrl.children.map(c => c.type),
+  })));
+  r.forEach(h => assert.strictEqual(h.spheres, 0, `sphere on controller: ${h.kinds}`));
+  await page.close();
+});
+
+test('controller hint tooltips are created per hand', async () => {
+  const { page } = await openPage();
+  const r = await page.evaluate(async () => {
+    const { hands } = window.game;
+    hands[0].ctrl.dispatchEvent({ type: 'connected', data: { handedness: 'left' } });
+    hands[1].ctrl.dispatchEvent({ type: 'connected', data: { handedness: 'right' } });
+    await new Promise(r => requestAnimationFrame(r));
+    return { tips: hands.map(h => !!h.tip && h.tip.visible), hands: hands.map(h => h.handedness) };
+  });
+  assert.deepStrictEqual(r.tips, [true, true]);
+  assert.deepStrictEqual(r.hands, ['left', 'right']);
+  await page.close();
+});
+
+test('VR menu: pointing at a button highlights it and the trigger presses it (Reset Cans)', async () => {
+  const { page } = await openPage();
+  await settle(page, 1500);
+  const r = await page.evaluate(async () => {
+    const { hands, menuMesh, THREE, cans } = window.game;
+    const frame = () => new Promise(r => requestAnimationFrame(r));
+    const hand = hands[1];
+    hand.ctrl.matrixAutoUpdate = true;
+    cans[0].body.position.set(5, 5, 5); // wreck the pyramid
+    menuMesh.updateMatrixWorld(true);
+    // centre of the "Reset Cans" button (canvas 256,136 of 512x720)
+    const local = new THREE.Vector3(0, ((1 - 136 / 720) - 0.5) * 0.5 * 720 / 512, 0);
+    const target = menuMesh.localToWorld(local);
+    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(menuMesh.quaternion);
+    hand.ctrl.position.copy(target).addScaledVector(normal, 0.5);
+    hand.ctrl.quaternion.copy(menuMesh.quaternion); // -z of the controller now points into the panel
+    await frame(); await frame();
+    const hover = hand.hover, laser = hand.laser.visible;
+    hand.ctrl.dispatchEvent({ type: 'selectstart' });
+    hand.ctrl.dispatchEvent({ type: 'selectend' });
+    const x = window.game.cans[0].body.position.x;
+    return { hover, laser, restored: Math.abs(x) < 0.3 };
+  });
+  assert.strictEqual(r.hover, 0, 'Reset Cans button not hovered');
+  assert.ok(r.laser, 'pointer line not shown');
+  assert.ok(r.restored, 'pressing the button did not reset the cans');
+  await page.close();
+});
+
+test('VR buttons: A resets cans, Y refills balls, X toggles hints, holding B quits VR', async () => {
+  const { page } = await openPage();
+  await settle(page, 1000);
+  await page.evaluate(() => {
+    const g = window.game;
+    window.__pad = { right: [false, false], left: [false, false], ended: 0 };
+    const btn = (p) => ({ pressed: p });
+    const fake = {
+      end() { window.__pad.ended++; },
+      get inputSources() {
+        const mk = (hand, [p4, p5]) => ({ handedness: hand, gamepad: { buttons: [btn(0), btn(0), btn(0), btn(0), btn(p4), btn(p5)] } });
+        return [mk('right', window.__pad.right), mk('left', window.__pad.left)];
+      },
+    };
+    g.renderer.xr.getSession = () => fake;
+  });
+  const frames = async n => page.evaluate(n => new Promise(res => { let i = 0; const f = () => (++i >= n ? res() : requestAnimationFrame(f)); f(); }), n);
+  await page.evaluate(() => { window.game.cans[0].body.position.set(5, 5, 5); window.__pad.right = [true, false]; });
+  await frames(3);
+  assert.ok(await page.evaluate(() => Math.abs(window.game.cans[0].body.position.x) < 0.3), 'A did not reset the cans');
+  await page.evaluate(() => { window.__pad.right = [false, false]; });
+  await page.evaluate(() => { window.game.throwBall(); window.__pad.left = [false, true]; });
+  await frames(3);
+  assert.strictEqual(await page.evaluate(() => window.game.balls.length), 4, 'Y did not refill the balls');
+  await page.evaluate(() => { window.__pad.left = [false, false]; });
+  const before = await page.evaluate(() => window.game.guide.show);
+  await page.evaluate(() => { window.__pad.left = [true, false]; });
+  await frames(3);
+  assert.strictEqual(await page.evaluate(() => window.game.guide.show), !before, 'X did not toggle hints');
+  await page.evaluate(() => { window.__pad.left = [false, false]; });
+  await page.evaluate(() => { window.__pad.right = [false, true]; });
+  await frames(2);
+  await page.evaluate(() => { window.__pad.right = [false, false]; });
+  await frames(2);
+  assert.strictEqual(await page.evaluate(() => window.__pad.ended), 0, 'a quick B tap must not quit');
+  await page.evaluate(() => { window.__pad.right = [false, true]; });
+  await page.waitForFunction(() => window.__pad.ended > 0, null, { timeout: 25000 });
   await page.close();
 });
 
@@ -225,6 +377,8 @@ test('sound: throwing whooshes and impacts clink/thud (unlocked by the click)', 
   const types = await soundTypes(page);
   assert.ok(types.includes('whoosh'), 'no whoosh on throw');
   assert.ok(types.some(t => ['hit', 'tin', 'thud', 'canfloor'].includes(t)), `no impact sounds: ${types}`);
+  const pitched = await page.evaluate(() => window.game.audio.log.filter(s => ['hit', 'tin', 'canfloor'].includes(s.type)).map(s => s.pitch));
+  assert.ok(pitched.length && pitched.every(p => p >= 1200 && p <= 1900), `can sounds should carry the can's own pitch: ${pitched}`);
   const ctxState = await page.evaluate(() => window.game.audio.ctx && window.game.audio.ctx.state);
   assert.strictEqual(ctxState, 'running', 'AudioContext not unlocked by the user gesture');
   assert.deepStrictEqual(errors, []);
