@@ -64,7 +64,7 @@ test('visuals: shadows, tone mapping and environment lighting are enabled', () =
 });
 
 test('controller UI: guide text names every button, quit is available, no sphere over the controller', () => {
-  for (const word of ['TRIGGER', 'GRIP', 'Quit VR', 'Refill Balls', 'Reset Cans']) assert.ok(moduleSrc.includes(word), `missing "${word}"`);
+  for (const word of ['TRIGGER', 'GRIP', 'Quit VR', 'Refill Balls', 'Reset Game']) assert.ok(moduleSrc.includes(word), `missing "${word}"`);
   assert.match(moduleSrc, /session\.end\(\)/);
   assert.doesNotMatch(moduleSrc, /ctrl\.add\(new THREE\.Mesh\(new THREE\.SphereGeometry/);
 });
@@ -146,4 +146,12 @@ test('VR keyboard: on-screen keys exist for A-Z, 0-9 and DEL', () => {
   assert.match(moduleSrc, /\['1234567890', 'QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'\]/);
   assert.match(moduleSrc, /id: 'key_DEL'/);
   assert.match(moduleSrc, /function typeKey/);
+});
+
+test('touch support: touch handlers, no page zoom/scroll, on-screen keys, coarse-pointer defaults', () => {
+  for (const ev of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) assert.match(moduleSrc, new RegExp(`addEventListener\\('${ev}'`));
+  assert.match(html, /user-scalable=no/);
+  assert.match(html, /touch-action: none/);
+  assert.match(html, /@media \(pointer: coarse\)/);
+  assert.match(moduleSrc, /const onScreenKeys = /);
 });
