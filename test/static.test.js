@@ -1,0 +1,44 @@
+// Fast checks that need no browser.
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
+
+const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const moduleSrc = html.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
+const importMap = JSON.parse(html.match(/<script type="importmap">([\s\S]*?)<\/script>/)[1]).imports;
+
+test('module script has valid syntax', () => {
+  // strip static imports, then parse the rest as an async function body
+  const body = moduleSrc.replace(/^import .*$/gm, '');
+  assert.doesNotThrow(() => new (Object.getPrototypeOf(async function () {}).constructor)(body));
+});
+
+test('import map pins exact versions (no latest / master)', () => {
+  for (const name of ['three', 'cannon-es']) {
+    assert.match(importMap[name], /@\d+\.\d+\.\d+\//, `${name} is not version-pinned: ${importMap[name]}`);
+  }
+  assert.match(importMap['three/addons/'], /three@\d+\.\d+\.\d+\//);
+});
+
+test('every bare import has an import-map entry', () => {
+  for (const m of moduleSrc.matchAll(/^import .* from '([^']+)'/gm)) {
+    const spec = m[1];
+    const ok = importMap[spec] || Object.keys(importMap).some(k => k.endsWith('/') && spec.startsWith(k));
+    assert.ok(ok, `no import-map entry for ${spec}`);
+  }
+});
+
+test('no remote textures/images that could fail and blank the scene', () => {
+  assert.doesNotMatch(html, /<img[^>]+src="https?:/);
+  assert.doesNotMatch(moduleSrc, /TextureLoader|\.jpg|\.png/);
+});
+
+test('WebXR is wired up: xr enabled, VRButton, local-floor, two controllers, lights', () => {
+  assert.match(moduleSrc, /renderer\.xr\.enabled\s*=\s*true/);
+  assert.match(moduleSrc, /VRButton\.createButton/);
+  assert.match(moduleSrc, /setReferenceSpaceType\('local-floor'\)/);
+  assert.match(moduleSrc, /getController\(i\)/);
+  assert.match(moduleSrc, /HemisphereLight|AmbientLight/);
+  assert.match(moduleSrc, /setAnimationLoop/);
+});
