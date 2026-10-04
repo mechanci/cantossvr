@@ -83,7 +83,7 @@ test('celebration, leaderboard and size settings exist', () => {
   for (const name of ['celebrate', 'computePoints', 'addScore', 'importBoard', 'exportBoard', 'setRows', 'setQuality']) {
     assert.match(moduleSrc, new RegExp(`(function|const) ${name}\\b`), `missing ${name}`);
   }
-  assert.match(moduleSrc, /MIN_ROWS = 3, MAX_ROWS = 6/);
+  assert.match(moduleSrc, /MIN_ROWS = 3, MAX_ROWS = 8/);
 });
 
 test('help text is collapsed by default (not an always-on overlay)', () => {
@@ -154,4 +154,10 @@ test('touch support: touch handlers, no page zoom/scroll, on-screen keys, coarse
   assert.match(html, /touch-action: none/);
   assert.match(html, /@media \(pointer: coarse\)/);
   assert.match(moduleSrc, /const onScreenKeys = /);
+});
+
+test('random pyramid looks: spec generator with gaps, sizes and weights, classic pin for tests', () => {
+  for (const name of ['makePyramidSpec', 'buildTower', 'specLabel']) assert.match(moduleSrc, new RegExp(`(function|const) ${name}\\b`));
+  assert.match(moduleSrc, /SPEC_GAPS/); assert.match(moduleSrc, /SPEC_SIZES/); assert.match(moduleSrc, /SPEC_WEIGHTS/);
+  assert.match(moduleSrc, /settings\.spec === 'classic'/);
 });
