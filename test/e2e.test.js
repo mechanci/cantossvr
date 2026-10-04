@@ -930,7 +930,7 @@ test('PC aiming: holding the button charges power with a bar and an arc; release
   });
   assert.ok(late.p > early.p + 3, `power did not grow: ${early.p} -> ${late.p}`);
   assert.ok(late.p <= 14.001 && late.charge > 0.99, 'power is capped at 14 m/s');
-  assert.ok(late.n > 10, `arc preview should show many dots, got ${late.n}`);
+  assert.ok(late.n >= 15, `arc preview should be a dense dotted line even for a fast throw, got ${late.n} dots`);
   const before = await page.evaluate(() => window.game.balls.length);
   await page.mouse.up();
   await page.waitForTimeout(100);

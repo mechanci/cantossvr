@@ -1567,6 +1567,7 @@ const ARC_MAX = 100;
 function predictArc(origin, vel, maxT = 3) {
   const pts = [], p = origin.clone(), v = vel.clone(), dt = 1 / 240, damp = Math.pow(1 - 0.01, dt), r = BALL_RADIUS;
   let landing = null, wall = false;
+  const last = origin.clone(); // dots are evenly spaced along the path, so a fast throw is as readable as a slow one
   for (let i = 0; i < maxT * 240; i++) {
     v.multiplyScalar(damp); v.y -= 9.8 * dt; p.addScaledVector(v, dt);
     const onTable = Math.abs(p.x) <= 0.6 + r && p.z >= -4.3 - r && p.z <= -3.7 + r;
@@ -1575,7 +1576,7 @@ function predictArc(origin, vel, maxT = 3) {
     if (onCounter && p.y <= COUNTER_TOP + r) { landing = p.clone(); landing.y = Math.max(landing.y, COUNTER_TOP + r); break; }
     if (Math.abs(p.x) <= 1.5 && p.y > 0.06 && p.y < 2.46 && p.z <= BACKWALL_Z + 0.03 + r) { landing = p.clone(); wall = true; break; }
     if (p.y <= r) { landing = p.clone(); landing.y = r; break; }
-    if (i % 8 === 0 && pts.length < ARC_MAX) pts.push(p.clone());
+    if (p.distanceTo(last) >= 0.12 && pts.length < ARC_MAX) { pts.push(p.clone()); last.copy(p); }
   }
   return { pts, landing: landing || p.clone(), wall };
 }
