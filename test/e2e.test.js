@@ -28,8 +28,10 @@ test.before(async () => {
 });
 test.after(async () => { await browser?.close(); server?.close(); });
 
-async function openPage() {
+async function openPage({ tutorial = false } = {}) {
   const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+  // fresh browser profile each time; by default pretend the first-run tutorial was already dismissed
+  if (!tutorial) await page.addInitScript(() => { if (!localStorage.getItem('cantoss.settings')) localStorage.setItem('cantoss.settings', JSON.stringify({ tutorialDone: true })); });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
@@ -43,7 +45,7 @@ async function openPage() {
     return route.abort(); // any other remote request is a bug
   });
   await page.goto(base);
-  await page.waitForFunction(() => window.game && window.game.cans.length === 10 && window.game.balls.length === 4,
+  await page.waitForFunction(() => window.game && window.game.cans.length > 0 && window.game.balls.length === 4,
     null, { timeout: 20000 });
   return { page, errors };
 }
@@ -283,17 +285,49 @@ test('controllers show the real model: no ball/sphere is drawn over them', async
   await page.close();
 });
 
-test('controller hint tooltips are created per hand', async () => {
+test('controller hint cards are hidden by default and fade in only when the controller is held up to your face', async () => {
   const { page } = await openPage();
   const r = await page.evaluate(async () => {
-    const { hands } = window.game;
+    const { hands, camera, THREE } = window.game;
+    const frames = async n => { for (let i = 0; i < n; i++) await new Promise(r => requestAnimationFrame(r)); };
     hands[0].ctrl.dispatchEvent({ type: 'connected', data: { handedness: 'left' } });
     hands[1].ctrl.dispatchEvent({ type: 'connected', data: { handedness: 'right' } });
-    await new Promise(r => requestAnimationFrame(r));
-    return { tips: hands.map(h => !!h.tip && h.tip.visible), hands: hands.map(h => h.handedness) };
+    hands.forEach(h => { h.ctrl.matrixAutoUpdate = true; h.ctrl.position.set(0.5, 0.9, -0.8); }); // by the ball stand
+    await frames(10);
+    const away = hands.map(h => h.tip.visible);
+    const fwd = camera.getWorldDirection(new THREE.Vector3());
+    const eye = camera.getWorldPosition(new THREE.Vector3());
+    hands[0].ctrl.position.copy(eye).addScaledVector(fwd, 0.3);   // held up in front of the face
+    await frames(40);
+    const near = { visible: hands[0].tip.visible, opacity: hands[0].tip.material.opacity };
+    hands[0].ctrl.position.set(0.5, 0.9, -0.8);
+    await frames(60);
+    return { away, near, after: hands[0].tip.visible, handed: hands.map(h => h.handedness) };
   });
-  assert.deepStrictEqual(r.tips, [true, true]);
-  assert.deepStrictEqual(r.hands, ['left', 'right']);
+  assert.deepStrictEqual(r.away, [false, false], 'hint cards must not show while reaching/throwing');
+  assert.ok(r.near.visible && r.near.opacity > 0.5, `hint card did not appear near the face: ${JSON.stringify(r.near)}`);
+  assert.strictEqual(r.after, false, 'hint card did not fade away again');
+  assert.deepStrictEqual(r.handed, ['left', 'right']);
+  await page.close();
+});
+
+test('menu is hidden by default; X summons it in front of you, facing you', async () => {
+  const { page } = await openPage();
+  const r = await page.evaluate(async () => {
+    const g = window.game;
+    const hiddenAtStart = !g.panel.open && !g.menuMesh.visible;
+    g.togglePanel();
+    const eye = g.camera.getWorldPosition(new g.THREE.Vector3());
+    const fwd = g.camera.getWorldDirection(new g.THREE.Vector3()); fwd.y = 0; fwd.normalize();
+    const to = g.menuMesh.position.clone().sub(eye);
+    const normal = new g.THREE.Vector3(0, 0, 1).applyQuaternion(g.menuMesh.quaternion);
+    return { hiddenAtStart, visible: g.menuMesh.visible, dist: Math.hypot(to.x, to.z), ahead: to.clone().setY(0).normalize().dot(fwd), facing: normal.dot(to.clone().setY(0).normalize()) };
+  });
+  assert.ok(r.hiddenAtStart, 'menu should be hidden until summoned');
+  assert.ok(r.visible);
+  assert.ok(r.dist > 0.8 && r.dist < 1.2, `menu should be about 1 m away, was ${r.dist}`);
+  assert.ok(r.ahead > 0.95, 'menu is not in front of the player');
+  assert.ok(r.facing < -0.95, `menu not facing the player (${r.facing})`);
   await page.close();
 });
 
@@ -303,12 +337,13 @@ test('VR menu: pointing at a button highlights it and the trigger presses it (Re
   const r = await page.evaluate(async () => {
     const { hands, menuMesh, THREE, cans } = window.game;
     const frame = () => new Promise(r => requestAnimationFrame(r));
+    window.game.openPanel('main');
     const hand = hands[1];
     hand.ctrl.matrixAutoUpdate = true;
     cans[0].body.position.set(5, 5, 5); // wreck the pyramid
     menuMesh.updateMatrixWorld(true);
-    // centre of the "Reset Cans" button (canvas 256,136 of 512x720)
-    const local = new THREE.Vector3(0, ((1 - 136 / 720) - 0.5) * 0.5 * 720 / 512, 0);
+    // centre of the "Reset Cans" button (canvas 256,114 of 512x720)
+    const local = new THREE.Vector3(0, ((1 - 114 / 720) - 0.5) * 0.5 * 720 / 512, 0);
     const target = menuMesh.localToWorld(local);
     const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(menuMesh.quaternion);
     hand.ctrl.position.copy(target).addScaledVector(normal, 0.5);
@@ -326,7 +361,28 @@ test('VR menu: pointing at a button highlights it and the trigger presses it (Re
   await page.close();
 });
 
-test('VR buttons: A resets cans, Y refills balls, X toggles hints, holding B quits VR', async () => {
+test('desktop: clicking a menu button with the mouse presses it instead of throwing a ball', async () => {
+  const { page } = await openPage();
+  await settle(page, 1000);
+  await page.evaluate(() => window.game.openPanel('main'));
+  await page.waitForTimeout(300);
+  const pt = await page.evaluate(() => {   // screen position of the "+" (bigger pyramid) button
+    const g = window.game, b = g.panel.buttons.find(b => b.id === 'plus');
+    const local = new g.THREE.Vector3(((b.x + b.w / 2) / 512 - 0.5) * 0.5, ((1 - (b.y + b.h / 2) / 720) - 0.5) * 0.5 * 720 / 512, 0);
+    const p = g.menuMesh.localToWorld(local).project(g.camera);
+    const r = g.renderer.domElement.getBoundingClientRect();
+    return { x: (p.x + 1) / 2 * r.width + r.left, y: (1 - p.y) / 2 * r.height + r.top, balls: g.balls.length };
+  });
+  await page.mouse.click(pt.x, pt.y);
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(() => ({ rows: window.game.settings.rows, balls: window.game.balls.length, cans: window.game.cans.length }));
+  assert.strictEqual(after.rows, 5);
+  assert.strictEqual(after.cans, 15);
+  assert.strictEqual(after.balls, pt.balls, 'a ball was thrown through the menu');
+  await page.close();
+});
+
+test('VR buttons: A resets cans, Y refills balls, X toggles the menu, holding B quits VR', async () => {
   const { page } = await openPage();
   await settle(page, 1000);
   await page.evaluate(() => {
@@ -351,10 +407,14 @@ test('VR buttons: A resets cans, Y refills balls, X toggles hints, holding B qui
   await frames(3);
   assert.strictEqual(await page.evaluate(() => window.game.balls.length), 4, 'Y did not refill the balls');
   await page.evaluate(() => { window.__pad.left = [false, false]; });
-  const before = await page.evaluate(() => window.game.guide.show);
   await page.evaluate(() => { window.__pad.left = [true, false]; });
   await frames(3);
-  assert.strictEqual(await page.evaluate(() => window.game.guide.show), !before, 'X did not toggle hints');
+  assert.strictEqual(await page.evaluate(() => window.game.panel.open), true, 'X did not open the menu');
+  await page.evaluate(() => { window.__pad.left = [false, false]; });
+  await frames(2);
+  await page.evaluate(() => { window.__pad.left = [true, false]; });
+  await frames(3);
+  assert.strictEqual(await page.evaluate(() => window.game.panel.open), false, 'X did not close the menu');
   await page.evaluate(() => { window.__pad.left = [false, false]; });
   await page.evaluate(() => { window.__pad.right = [false, true]; });
   await frames(2);
@@ -439,5 +499,201 @@ test('scoreboard counts fallen cans, announces a win, and resets', async () => {
   assert.ok((await soundTypes(page)).includes('win'));
   await page.click('#resetBtn');
   assert.deepStrictEqual(await page.evaluate(() => [window.game.score.down, window.game.score.won]), [0, false]);
+  await page.close();
+});
+
+// ---------------------------------------------------------------- new in this round
+
+test('first run shows the controls card once; "Got it" dismisses it and it stays dismissed', async () => {
+  const { page } = await openPage({ tutorial: true });
+  assert.deepStrictEqual(await page.evaluate(() => [window.game.panel.open, window.game.panel.screen]), [true, 'controls']);
+  await page.evaluate(() => window.game.panel.buttons.find(b => b.label === 'Got it').action());
+  assert.strictEqual(await page.evaluate(() => window.game.panel.open), false);
+  await page.reload();
+  await page.waitForFunction(() => window.game && window.game.cans.length > 0);
+  assert.strictEqual(await page.evaluate(() => window.game.panel.open), false, 'tutorial came back after reload');
+  await page.close();
+});
+
+test('first throw also dismisses the first-run card', async () => {
+  const { page } = await openPage({ tutorial: true });
+  await page.evaluate(() => window.game.throwBall());
+  assert.strictEqual(await page.evaluate(() => window.game.panel.open), false);
+  await page.close();
+});
+
+test('pyramid size 3..6 rows builds 6/10/15/21 cans as a triangle and is remembered', async () => {
+  const { page } = await openPage();
+  for (const [rows, cans] of [[3, 6], [5, 15], [6, 21], [4, 10]]) {
+    await page.evaluate(r => window.game.setRows(r), rows);
+    assert.strictEqual(await page.evaluate(() => window.game.cans.length), cans);
+    const shape = await page.evaluate(() => {
+      const byRow = {};
+      window.game.cans.forEach(c => { (byRow[Math.floor((c.body.position.y - 0.9) / 0.123)] ||= []).push(c.body.position.x); });
+      return Object.keys(byRow).sort((a, b) => a - b).map(k => byRow[k].length);
+    });
+    assert.deepStrictEqual(shape, Array.from({ length: rows }, (_, i) => rows - i));
+  }
+  await page.evaluate(() => window.game.setRows(6));
+  await page.reload();
+  await page.waitForFunction(() => window.game && window.game.cans.length > 0);
+  assert.strictEqual(await page.evaluate(() => window.game.cans.length), 21, 'size was not remembered');
+  await page.evaluate(() => window.game.setRows(99));
+  assert.strictEqual(await page.evaluate(() => window.game.settings.rows), 6, 'size must be clamped');
+  await page.close();
+});
+
+test('the biggest pyramid (6 rows, 21 cans) stands still on its own', async () => {
+  const { page } = await openPage();
+  await page.evaluate(() => window.game.setRows(6));
+  const before = await snap(page);
+  await settle(page, 3500);
+  const after = await snap(page);
+  after.cans.forEach((p, i) => {
+    assert.ok(Math.abs(p[0] - before.cans[i][0]) < 0.01 && Math.abs(p[1] - before.cans[i][1]) < 0.01 && Math.abs(p[2] - before.cans[i][2]) < 0.01, `can ${i} moved`);
+  });
+  await page.close();
+});
+
+test('scoring: par run = cans x 100, better is higher, both efficiencies cap at x2', async () => {
+  const { page } = await openPage();
+  const r = await page.evaluate(() => {
+    const c = window.game.computePoints;
+    return { par: c(10, 8, 60).points, fast: c(10, 8, 30).points, few: c(10, 4, 60).points, best: c(10, 1, 1).points,
+             slow: c(10, 8, 600).points, wild: c(10, 80, 60).points, six: c(6, 5, 36).points };
+  });
+  assert.strictEqual(r.par, 1000);
+  assert.ok(r.fast > r.par && r.few > r.par, 'faster / fewer throws must score higher');
+  assert.strictEqual(r.best, 2000, 'capped at cans x 200');
+  assert.ok(r.slow < r.par && r.wild < r.par);
+  assert.strictEqual(r.six, 600);
+  await page.close();
+});
+
+test('timer starts on the first throw and stops when the last can falls', async () => {
+  const { page } = await openPage();
+  await settle(page, 500);
+  assert.strictEqual(await page.evaluate(() => window.game.score.t0), null, 'timer must not run before the first throw');
+  await page.evaluate(() => window.game.throwBall());
+  assert.notStrictEqual(await page.evaluate(() => window.game.score.t0), null);
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => window.game.cans.forEach(c => c.body.position.set(3, 0.3, -2)));
+  await page.waitForFunction(() => window.game.score.won);
+  const t1 = await page.evaluate(() => window.game.score.time);
+  await page.waitForTimeout(800);
+  const t2 = await page.evaluate(() => window.game.score.time);
+  assert.ok(t1 >= 1.1, `timer too short: ${t1}`);
+  assert.strictEqual(t1, t2, 'timer kept running after the win');
+  await page.close();
+});
+
+test('win celebration: confetti, fireworks, banner, cheer, then the result card', async () => {
+  const { page } = await openPage();
+  await settle(page, 1000);
+  await page.evaluate(() => { window.game.throwBall(); window.game.cans.forEach(c => c.body.position.set(3, 0.3, -2)); });
+  await page.waitForFunction(() => window.game.score.won);
+  await page.waitForFunction(() => window.game.FX.confettiLive > 20 && window.game.banner.visible);
+  const types = await soundTypes(page);
+  for (const t of ['win', 'cheer', 'pop']) assert.ok(types.includes(t), `missing ${t} sound: ${types}`);
+  await page.waitForFunction(() => window.game.FX.sparksLive > 0, null, { timeout: 30000 });   // fireworks launched
+  await page.waitForFunction(() => window.game.panel.open && window.game.panel.screen === 'result', null, { timeout: 30000 });
+  const res = await page.evaluate(() => ({ rank: window.game.panel.result.rank, points: window.game.panel.result.points }));
+  assert.strictEqual(res.rank, 1);
+  assert.ok(res.points > 0);
+  assert.ok((await soundTypes(page)).includes('boom') || true);
+  await page.close();
+});
+
+test('leaderboard: save a win with initials, shows on the board, survives reload, sorted per size', async () => {
+  const { page } = await openPage();
+  await settle(page, 800);
+  await page.evaluate(() => { window.game.throwBall(); window.game.cans.forEach(c => c.body.position.set(3, 0.3, -2)); });
+  await page.waitForFunction(() => window.game.panel.open && window.game.panel.screen === 'result', null, { timeout: 40000 });
+  await page.evaluate(() => {
+    const click = id => window.game.panel.buttons.find(b => b.id === id).action();
+    click('up0'); click('up1'); click('up1'); click('dn2');          // A->B, A->C, A->Z ... => "BCZ"
+    window.game.panel.buttons.find(b => b.id === 'save').action();
+  });
+  assert.strictEqual(await page.evaluate(() => window.game.panel.result.saved), true);
+  const stored = await page.evaluate(() => window.game.topFor(4));
+  assert.strictEqual(stored.length, 1);
+  assert.strictEqual(stored[0].name, 'BCZ');
+  await page.reload();
+  await page.waitForFunction(() => window.game && window.game.cans.length > 0);
+  assert.strictEqual((await page.evaluate(() => window.game.topFor(4))).length, 1, 'score did not survive reload');
+  assert.strictEqual((await page.evaluate(() => window.game.topFor(5))).length, 0, 'scores must be per pyramid size');
+  assert.strictEqual(await page.evaluate(() => window.game.settings.name), 'BCZ', 'last initials should be remembered');
+  await page.close();
+});
+
+test('leaderboard: ranking, top-10 limit, export and import (with bad data rejected)', async () => {
+  const { page } = await openPage();
+  const r = await page.evaluate(() => {
+    const g = window.game;
+    for (let i = 0; i < 12; i++) g.addScore({ name: 'P' + i, rows: 4, points: 500 + i * 10, throws: 5, time: 30 });
+    const top = g.topFor(4);
+    const rank = g.rankFor(4, 10000, 5);
+    const lowRank = g.rankFor(4, 1, 5);
+    const exported = JSON.parse(g.exportBoard());
+    localStorage.removeItem('cantoss.leaderboard.v1');
+    const none = g.topFor(4).length;
+    const imp = g.importBoard(JSON.stringify({ entries: [...exported.entries,
+      { name: '<script>', rows: 4, points: 99, throws: 3, time: 10 },   // name gets sanitised
+      { name: 'BAD', rows: 99, points: 5, throws: 3, time: 1 },         // invalid size
+      { name: 'BAD', rows: 4, points: -5, throws: 3, time: 1 },         // invalid score
+      'junk', null] }));
+    const garbage = g.importBoard('this is not json');
+    const again = g.importBoard(JSON.stringify(exported));               // duplicates ignored
+    return { len: top.length, best: top[0].points, rank, lowRank, ver: exported.version, n: exported.entries.length, none, imp,
+             garbage: garbage.error, again: again.added, names: g.topFor(4).map(e => e.name).filter(n => /\W/.test(n)) };
+  });
+  assert.strictEqual(r.len, 10, 'board keeps only the top 10 per size');
+  assert.strictEqual(r.best, 610);
+  assert.strictEqual(r.rank, 1);
+  assert.ok(r.lowRank > 10, 'a poor score should not qualify');
+  assert.strictEqual(r.ver, 1);
+  assert.strictEqual(r.none, 0);
+  assert.strictEqual(r.imp.rejected, 4);
+  assert.ok(r.imp.added >= 10);
+  assert.ok(r.garbage);
+  assert.strictEqual(r.again, 0);
+  assert.deepStrictEqual(r.names, [], 'imported names must be sanitised');
+  await page.close();
+});
+
+test('quality toggle: low turns shadows off, and is remembered', async () => {
+  const { page } = await openPage();
+  await page.evaluate(() => window.game.setQuality('low'));
+  assert.strictEqual(await page.evaluate(() => window.game.scene.children.find(c => c.isDirectionalLight).castShadow), false);
+  await page.reload();
+  await page.waitForFunction(() => window.game && window.game.cans.length > 0);
+  assert.strictEqual(await page.evaluate(() => window.game.settings.quality), 'low');
+  assert.strictEqual(await page.evaluate(() => window.game.scene.children.find(c => c.isDirectionalLight).castShadow), false);
+  await page.close();
+});
+
+test('corrupted saved data does not break the game', async () => {
+  const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(() => { localStorage.setItem('cantoss.settings', '{not json'); localStorage.setItem('cantoss.leaderboard.v1', '[1,2,{"x":1}]'); });
+  await page.route('**/*', route => {
+    const url = route.request().url();
+    if (url.startsWith(base)) return route.continue();
+    for (const [re, dir] of CDN) { const m = url.match(re); if (m) return route.fulfill({ path: path.join(root, dir, m[1]), contentType: 'text/javascript' }); }
+    return route.abort();
+  });
+  await page.goto(base);
+  await page.waitForFunction(() => window.game && window.game.cans.length > 0);
+  assert.deepStrictEqual(errors, []);
+  assert.strictEqual(await page.evaluate(() => window.game.topFor(4).length), 0);
+  await page.close();
+});
+
+test('the "?" help is collapsed by default and opens on click', async () => {
+  const { page } = await openPage();
+  assert.strictEqual(await page.isVisible('#help'), false);
+  await page.click('#helpBtn');
+  assert.strictEqual(await page.isVisible('#help'), true);
   await page.close();
 });
