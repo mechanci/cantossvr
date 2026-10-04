@@ -3,7 +3,7 @@
 <head>
   <title>Can Toss VR</title>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#d6ecf7">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23d6ecf7'/%3E%3Crect x='20' y='12' width='24' height='40' rx='4' fill='%23d6d9dc'/%3E%3Crect x='20' y='25' width='24' height='15' fill='%23ff6f61'/%3E%3Cellipse cx='32' cy='12' rx='12' ry='3.5' fill='%23eceff1'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,7 +17,8 @@
       --font: Fredoka, "Segoe UI", system-ui, sans-serif;
     }
     body { margin: 0; overflow: hidden; background: #d6ecf7; font-family: var(--font); }
-    canvas { display: block; }
+    html, body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+    canvas { display: block; touch-action: none; -webkit-user-select: none; user-select: none; }
     :focus-visible { outline: 3px solid var(--coral); outline-offset: 2px; }
 
     /* chunky rounded buttons */
@@ -30,7 +31,17 @@
     .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0, 0, 0, .15); }
     .btn--primary { background: var(--sun); color: var(--ink); }
     .btn--primary:hover { background: var(--coral); }
-    #bar { position: fixed; top: 16px; left: 16px; z-index: 999; display: flex; gap: 8px; }
+    #bar { position: fixed; top: max(16px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left)); z-index: 999; display: flex; flex-wrap: wrap; gap: 8px; }
+    /* touch screens: bigger targets, no hover colours stuck after a tap */
+    @media (pointer: coarse) {
+      .btn { padding: 14px 18px; font-size: 16px; }
+      .btn:hover { background: #fff; color: var(--sky-ink); }
+      .btn--primary:hover { background: var(--sun); color: var(--ink); }
+      #helpBtn { width: 52px; height: 52px; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); }
+      #help { right: 16px; bottom: 80px; max-height: 60vh; overflow: auto; }
+      #aimHint { white-space: normal; text-align: center; width: max-content; max-width: 86vw; bottom: 96px; }
+    }
+    @media (max-width: 520px) { #bar { right: 16px; } .btn { padding: 10px 14px; } #help { width: auto; left: 16px; } }
 
     /* three's default "Enter VR" button, restyled */
     #VRButton {
@@ -122,6 +133,12 @@
     <dt><kbd>R</kbd></dt><dd>reset game</dd>
     <dt><kbd>M</kbd></dt><dd>menu</dd>
   </dl>
+  <h2>Phone / tablet</h2>
+  <dl>
+    <dt><kbd>Drag</kbd></dt><dd>look around</dd>
+    <dt><kbd>Press &amp; hold</kbd></dt><dd>charge the throw</dd>
+    <dt><kbd>Let go</kbd></dt><dd>throw the ball</dd>
+  </dl>
   <h2>VR</h2>
   <dl>
     <dt><kbd>Trigger / Grip</kbd></dt><dd>grab and throw</dd>
@@ -206,7 +223,8 @@ const store = {
 const SETTINGS_KEY = 'cantoss.settings', BOARD_KEY = 'cantoss.leaderboard.v1';
 const MIN_ROWS = 3, MAX_ROWS = 6, BOARD_SIZE = 10, MAX_NAME = 8;
 const PLACEHOLDER_NAME = 'PLAYER'; // shown in the name field until the player types; never remembered from an earlier game
-const settings = Object.assign({ rows: 4, quality: 'high', tutorialDone: false, name: 'AAA', pointerLock: true }, store.get(SETTINGS_KEY, {}));
+const isCoarse = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches); // phones and tablets start on the lighter quality
+const settings = Object.assign({ rows: 4, quality: isCoarse ? 'low' : 'high', tutorialDone: false, name: 'AAA', pointerLock: true }, store.get(SETTINGS_KEY, {}));
 settings.rows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, Math.round(+settings.rows) || 4));
 if (settings.quality !== 'low') settings.quality = 'high';
 settings.name = String(settings.name || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, MAX_NAME) || 'AAA';
@@ -1224,7 +1242,8 @@ function placePanel() { // about 1 m in front of where you are looking, turned t
   d.y = 0;
   if (d.lengthSq() < 1e-4) d.set(0, 0, -1);
   d.normalize();
-  menuMesh.position.set(p.x + d.x * 1.0, p.y - 0.05, p.z + d.z * 1.0);
+  const dist = renderer.xr.isPresenting ? 1.0 : Math.min(1.5, Math.max(1.0, 0.5 / camera.aspect)); // a tall phone screen needs the card further back to fit its width
+  menuMesh.position.set(p.x + d.x * dist, p.y - 0.05, p.z + d.z * dist);
   menuMesh.rotation.set(0, Math.atan2(-d.x, -d.z), 0);
   menuMesh.updateMatrixWorld(true);
 }
@@ -1268,7 +1287,7 @@ function screenButtons() {
   ];
   if (sc === 'result') {
     const res = panel.result, out = [];
-    const canSave = res && !res.saved && res.rank <= BOARD_SIZE, vr = renderer.xr.isPresenting;
+    const canSave = res && !res.saved && res.rank <= BOARD_SIZE, vr = onScreenKeys();
     if (canSave && vr) { // no keyboard in a headset: an on-screen one, pointed at with the controller
       ['1234567890', 'QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'].forEach((row, ri) => {
         const total = row.length * 44 - 4 + (ri === 3 ? 66 : 0), x0 = Math.round((PANEL_W - total) / 2), y = 364 + ri * 46;
@@ -1287,6 +1306,8 @@ function screenButtons() {
   }
   return [];
 }
+let touchMode = false; // set by the first touch
+const onScreenKeys = () => renderer.xr.isPresenting || touchMode; // no physical keyboard: draw keys on the card
 function typeKey(ch) { // from the keyboard or the on-screen keys
   if (ch === 'DEL') panel.typed = panel.typed.slice(0, -1);
   else if (panel.typed.length < MAX_NAME) panel.typed += ch;
@@ -1408,7 +1429,7 @@ function drawPanel() {
     const verdict = res.saved ? 'Saved to the leaderboard!' : res.rank === 1 ? 'New best score!' : res.rank <= BOARD_SIZE ? `You made the board: #${res.rank}` : 'Not in the top 10 this time. Try again!';
     drawText(g, verdict, PANEL_W / 2, 268, { font: fnt(600, 22), color: res.saved || res.rank <= BOARD_SIZE ? UI.accentDeep : UI.muted, align: 'center' });
     if (!res.saved && res.rank <= BOARD_SIZE) {
-      const vr = renderer.xr.isPresenting, fy = vr ? 304 : 330, fh = vr ? 48 : 64;
+      const vr = onScreenKeys(), fy = vr ? 304 : 330, fh = vr ? 48 : 64;
       label('YOUR NAME', PANEL_W / 2, vr ? 292 : 304, { align: 'center' });
       roundRect(g, 36, fy, 440, fh, 14); g.fillStyle = UI.card; g.fill();
       g.strokeStyle = UI.accent; g.lineWidth = 3; roundRect(g, 37.5, fy + 1.5, 437, fh - 3, 13); g.stroke();
@@ -1495,7 +1516,7 @@ const chargePower = (held) => THROW_MIN + (THROW_MAX - THROW_MIN) * Math.min(1, 
 const cv = renderer.domElement;
 const aim = { locked: false, lockWanted: settings.pointerLock && !!cv.requestPointerLock, down: false, t0: 0, power: THROW_MIN, charge: 0 };
 const aimEls = { cross: document.getElementById('crosshair'), power: document.getElementById('power'), fill: document.querySelector('#power i'), hint: document.getElementById('aimHint') };
-const setAimHint = () => { aimEls.hint.textContent = aim.lockWanted ? 'Click to aim · hold to charge · release to throw' : 'Drag to look · hold click to charge · release to throw'; };
+const setAimHint = () => { aimEls.hint.textContent = touchMode ? 'Drag to look · press and hold to charge · let go to throw' : aim.lockWanted ? 'Click to aim · hold to charge · release to throw' : 'Drag to look · hold click to charge · release to throw'; };
 setAimHint();
 document.addEventListener('pointerlockchange', () => { aim.locked = document.pointerLockElement === cv; if (aim.locked) { aim.down = false; dragging = false; } });
 document.addEventListener('pointerlockerror', () => { aim.lockWanted = false; setAimHint(); }); // locking refused: fall back to drag-to-look
@@ -1547,6 +1568,42 @@ window.addEventListener('mouseup', (e) => {
   }
   if (wasDown && (aim.locked || wasClick)) throwBall(chargePower(held));
 });
+
+// Touch: drag to look, press and hold to charge, let go to throw (a drag never throws). Same flow as an unlocked mouse.
+let touchId = null;
+const findTouch = (list) => { for (const t of list) if (t.identifier === touchId) return t; return null; };
+cv.addEventListener('touchstart', e => {
+  if (renderer.xr.isPresenting) return;
+  e.preventDefault();
+  if (!touchMode) { touchMode = true; aim.lockWanted = false; setAimHint(); bump(); }
+  if (touchId !== null) return; // one finger aims; extra fingers are ignored
+  const t = e.changedTouches[0];
+  touchId = t.identifier; dragging = true; moved = 0; lastX = t.clientX; lastY = t.clientY;
+  aim.down = panelHitFromMouse(t) === -1; aim.t0 = performance.now();
+}, { passive: false });
+cv.addEventListener('touchmove', e => {
+  const t = findTouch(e.changedTouches);
+  if (!t) return;
+  e.preventDefault();
+  const dx = t.clientX - lastX, dy = t.clientY - lastY;
+  lastX = t.clientX; lastY = t.clientY;
+  moved += Math.abs(dx) + Math.abs(dy);
+  if (moved >= 5) look(dx, dy, 0.005);
+}, { passive: false });
+function endTouch(e, cancelled) {
+  const t = findTouch(e.changedTouches);
+  if (!t) return;
+  e.preventDefault();
+  const wasDown = aim.down, wasClick = moved < 5, held = (performance.now() - aim.t0) / 1000;
+  aim.down = false; dragging = false; touchId = null;
+  if (cancelled) return;
+  const i = panelHitFromMouse(t);
+  if (i >= 0 && wasClick) { activatePanel(i); return; }
+  if (i === -2) return;
+  if (wasDown && wasClick) throwBall(chargePower(held));
+}
+cv.addEventListener('touchend', e => endTouch(e, false), { passive: false });
+cv.addEventListener('touchcancel', e => endTouch(e, true), { passive: false });
 
 // Where a ball thrown right now starts, and how fast it leaves (same numbers throwBall uses).
 const throwOrigin = () => {

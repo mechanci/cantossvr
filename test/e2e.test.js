@@ -29,8 +29,8 @@ test.before(async () => {
 });
 test.after(async () => { await browser?.close(); server?.close(); });
 
-async function openPage({ tutorial = false } = {}) {
-  const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+async function openPage({ tutorial = false, touch = false } = {}) {
+  const page = await browser.newPage(touch ? { viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 } : { viewport: { width: 800, height: 600 } });
   // fresh browser profile each time; by default pretend the first-run tutorial was already dismissed
   if (!tutorial) await page.addInitScript(() => { if (!localStorage.getItem('cantoss.settings')) localStorage.setItem('cantoss.settings', JSON.stringify({ tutorialDone: true, pointerLock: false })); });
   const errors = [];
@@ -1116,5 +1116,75 @@ test('scene: the player stands on a mat at the throw line, the ball stand and ca
   assert.ok(r.slotY.every(Boolean), 'balls rest on top of the stand');
   assert.deepStrictEqual(r.canZ, [-4]);
   assert.ok(r.canMinY > 0.9, 'cans stand on the table top');
+  await page.close();
+});
+
+// ---------------------------------------------------------------- phones and tablets
+
+const cdpSessions = new WeakMap();
+async function touchSeq(page, steps) { // steps: [type, x, y, waitMs]; drives real touch events through the DevTools protocol
+  const cdp = cdpSessions.get(page) || cdpSessions.set(page, await page.context().newCDPSession(page)).get(page);
+  for (const [type, x, y, wait = 0] of steps) {
+    await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] });
+    if (wait) await page.waitForTimeout(wait);
+  }
+}
+
+test('touch: a drag looks around and does not throw; press, hold and let go throws with charged power', async () => {
+  const { page, errors } = await openPage({ touch: true });
+  await settle(page, 800);
+  const yaw0 = await page.evaluate(() => window.game.camera.rotation.y);
+  await touchSeq(page, [['touchStart', 100, 400], ['touchMove', 160, 400, 30], ['touchMove', 240, 400, 30], ['touchEnd']]);
+  assert.ok(Math.abs(await page.evaluate(() => window.game.camera.rotation.y) - yaw0) > 0.2, 'dragging did not turn the view');
+  assert.strictEqual(await page.evaluate(() => window.game.score.throws), 0, 'a drag must not throw');
+  assert.ok(await page.evaluate(() => window.game.aim.lockWanted === false));
+  await touchSeq(page, [['touchStart', 195, 390, 900]]);
+  const charge = await page.evaluate(() => window.game.aim.charge);
+  assert.ok(charge > 0.3, `holding did not charge (${charge})`);
+  await touchSeq(page, [['touchEnd']]);
+  assert.strictEqual(await page.evaluate(() => window.game.score.throws), 1, 'letting go did not throw');
+  assert.match(await page.textContent('#aimHint'), /press and hold/);
+  assert.deepStrictEqual(errors, []);
+  await page.close();
+});
+
+test('touch: tapping a menu button works, and the winner types a name on the on-screen keys', async () => {
+  const { page } = await openPage({ touch: true });
+  await settle(page, 800);
+  await page.evaluate(() => { window.game.throwBall(); window.game.cans.forEach(c => c.body.position.set(3, 0.3, -2)); });
+  await page.waitForFunction(() => window.game.panel.open && window.game.panel.screen === 'result', null, { timeout: 40000 });
+  // the keyboard layout is only drawn once a finger has touched the screen
+  await touchSeq(page, [['touchStart', 5, 700, 40], ['touchEnd']]);
+  await page.waitForFunction(() => window.game.panel.buttons.some(b => b.id === 'key_Q'));
+  const tap = async (id) => {
+    const pt = await page.evaluate((id) => {
+      const g = window.game, b = g.panel.buttons.find(b => b.id === id), m = g.menuMesh;
+      const uv = new g.THREE.Vector2((b.x + b.w / 2) / 512, 1 - (b.y + b.h / 2) / 720);
+      const v = new g.THREE.Vector3((uv.x - 0.5) * 0.5, (uv.y - 0.5) * 0.5 * 720 / 512, 0).applyMatrix4(m.matrixWorld).project(g.camera);
+      return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight };
+    }, id);
+    await touchSeq(page, [['touchStart', pt.x, pt.y, 30], ['touchEnd']]);
+  };
+  for (const k of ['key_B', 'key_O', 'key_B']) await tap(k);
+  assert.strictEqual(await page.evaluate(() => window.game.panel.typed), 'BOB');
+  await tap('save');
+  assert.strictEqual(await page.evaluate(() => window.game.panel.result.saved), true);
+  assert.deepStrictEqual(await page.evaluate(() => window.game.topFor(4).map(e => e.name)), ['BOB']);
+  await page.close();
+});
+
+test('touch: phone defaults to low quality, viewport blocks zoom, and the menu card fits a portrait screen', async () => {
+  const { page } = await openPage({ touch: true });
+  assert.match(await page.getAttribute('meta[name=viewport]', 'content'), /user-scalable=no/);
+  assert.strictEqual(await page.evaluate(() => getComputedStyle(window.game.renderer.domElement).touchAction), 'none');
+  await page.evaluate(() => window.game.openPanel('main'));
+  const fits = await page.evaluate(() => {
+    const g = window.game, m = g.menuMesh, hw = 0.25, hh = 0.25 * 720 / 512;
+    return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].every(([x, y]) => {
+      const v = new g.THREE.Vector3(x, y, 0).applyMatrix4(m.matrixWorld).project(g.camera);
+      return Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1;
+    });
+  });
+  assert.ok(fits, 'the menu card is cut off on a portrait phone');
   await page.close();
 });

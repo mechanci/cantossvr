@@ -147,3 +147,11 @@ test('VR keyboard: on-screen keys exist for A-Z, 0-9 and DEL', () => {
   assert.match(moduleSrc, /id: 'key_DEL'/);
   assert.match(moduleSrc, /function typeKey/);
 });
+
+test('touch support: touch handlers, no page zoom/scroll, on-screen keys, coarse-pointer defaults', () => {
+  for (const ev of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) assert.match(moduleSrc, new RegExp(`addEventListener\\('${ev}'`));
+  assert.match(html, /user-scalable=no/);
+  assert.match(html, /touch-action: none/);
+  assert.match(html, /@media \(pointer: coarse\)/);
+  assert.match(moduleSrc, /const onScreenKeys = /);
+});
