@@ -49,6 +49,14 @@ All static scenery is merged by material (`mergeStatic`) so the whole fairground
 
 Flat canvas UI (cards, banner, hints) skips tone mapping so the cream and colours stay as drawn.
 
+## Rounds and difficulty
+
+Every round is a triangle pyramid (3 to 8 rows, 6 to 36 cans) with a random look: gaps between cans (tight, loose, wide),
+can size (mini, standard, large) and weight (light, heavy). The same look never comes up twice in a row, and the menu
+names it. A can only counts as down when it is off the table or lying nearly flat. The clock starts when you first aim or
+pick up a ball, and each score efficiency caps at x1.5, so a two-throw, one-second run no longer maxes the board.
+`settings.spec = 'classic'` pins the old tight, standard, light pyramid (the tests use it).
+
 ## Updating
 
 - Interface colours live in `index.html`: `:root { --cream, --ink, ... }` for the page and the `UI` object for the

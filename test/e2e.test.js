@@ -32,7 +32,7 @@ test.after(async () => { await browser?.close(); server?.close(); });
 async function openPage({ tutorial = false, touch = false } = {}) {
   const page = await browser.newPage(touch ? { viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 } : { viewport: { width: 800, height: 600 } });
   // fresh browser profile each time; by default pretend the first-run tutorial was already dismissed
-  if (!tutorial) await page.addInitScript(() => { if (!localStorage.getItem('cantoss.settings')) localStorage.setItem('cantoss.settings', JSON.stringify({ tutorialDone: true, pointerLock: false })); });
+  if (!tutorial) await page.addInitScript(() => { if (!localStorage.getItem('cantoss.settings')) localStorage.setItem('cantoss.settings', JSON.stringify({ tutorialDone: true, pointerLock: false, spec: 'classic' })); });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
@@ -552,9 +552,9 @@ test('first throw also dismisses the first-run card', async () => {
   await page.close();
 });
 
-test('pyramid size 3..6 rows builds 6/10/15/21 cans as a triangle and is remembered', async () => {
+test('pyramid size 3..8 rows builds 6/10/15/21/36 cans as a triangle and is remembered', async () => {
   const { page } = await openPage();
-  for (const [rows, cans] of [[3, 6], [5, 15], [6, 21], [4, 10]]) {
+  for (const [rows, cans] of [[3, 6], [5, 15], [6, 21], [8, 36], [4, 10]]) {
     await page.evaluate(r => window.game.setRows(r), rows);
     assert.strictEqual(await page.evaluate(() => window.game.cans.length), cans);
     const shape = await page.evaluate(() => {
@@ -569,7 +569,7 @@ test('pyramid size 3..6 rows builds 6/10/15/21 cans as a triangle and is remembe
   await page.waitForFunction(() => window.game && window.game.cans.length > 0);
   assert.strictEqual(await page.evaluate(() => window.game.cans.length), 21, 'size was not remembered');
   await page.evaluate(() => window.game.setRows(99));
-  assert.strictEqual(await page.evaluate(() => window.game.settings.rows), 6, 'size must be clamped');
+  assert.strictEqual(await page.evaluate(() => window.game.settings.rows), 8, 'size must be clamped');
   await page.close();
 });
 
@@ -585,7 +585,61 @@ test('the biggest pyramid (6 rows, 21 cans) stands still on its own', async () =
   await page.close();
 });
 
-test('scoring: par run = cans x 100, better is higher, both efficiencies cap at x2', async () => {
+test('every random pyramid look (gaps x sizes x weights) at 3 and 8 rows builds and stands still on its own', async () => {
+  const { page } = await openPage();
+  for (const rows of [3, 8]) {
+    const n = rows * (rows + 1) / 2;
+    const combos = await page.evaluate(() => { const g = window.game, o = []; for (const gap of g.SPEC_GAPS) for (const size of g.SPEC_SIZES) for (const weight of g.SPEC_WEIGHTS) o.push({ gap, size, weight }); return o; });
+    for (const combo of combos) {
+      await page.evaluate(([r, sp]) => { window.game.settings.rows = r; window.game.setSpec(sp); }, [rows, combo]);
+      assert.strictEqual(await page.evaluate(() => window.game.cans.length), n);
+      const before = await snap(page);
+      await settle(page, 1800);
+      const after = await snap(page);
+      after.cans.forEach((p, i) => assert.ok(Math.abs(p[0] - before.cans[i][0]) < 0.015 && Math.abs(p[1] - before.cans[i][1]) < 0.015, `${rows} rows ${combo.gap.id}/${combo.size.id}/${combo.weight.id}: can ${i} moved`));
+    }
+  }
+  await page.close();
+});
+
+test('random pyramids: a new look every reset (never the same twice in a row) and the menu names it', async () => {
+  const { page } = await openPage();
+  await page.evaluate(() => { delete window.game.settings.spec; });
+  const seq = [];
+  for (let i = 0; i < 12; i++) {
+    await page.evaluate(() => window.game.resetCans());
+    seq.push(await page.evaluate(() => { const s = window.game.getSpec(); return `${s.gap.id}/${s.size.id}/${s.weight.id}`; }));
+  }
+  seq.slice(1).forEach((k, i) => assert.notStrictEqual(k, seq[i], 'same look twice in a row'));
+  assert.ok(new Set(seq).size >= 4, `not much variety: ${seq}`);
+  await page.close();
+});
+
+test('a can only counts as down when it is off the table or lying flat (leaning does not count)', async () => {
+  const { page } = await openPage();
+  await settle(page, 500);
+  const r = await page.evaluate(() => {
+    const g = window.game, c = g.cans[0];
+    c.body.wakeUp(); c.body.quaternion.setFromEuler(0, 0, 0.6); // leaning about 34 degrees: still on the table
+    return new Promise(res => setTimeout(() => res(g.score.down), 50));
+  });
+  assert.strictEqual(r, 0, 'a leaning can must not count');
+  await page.evaluate(() => { const c = window.game.cans[0]; c.body.quaternion.setFromEuler(0, 0, Math.PI / 2); c.body.position.y = 0.95; });
+  await page.waitForFunction(() => window.game.score.down >= 1);
+  await page.close();
+});
+
+test('the clock starts when you begin to aim, not at the first throw', async () => {
+  const { page } = await openPage();
+  await settle(page, 500);
+  await page.mouse.move(400, 300); await page.mouse.down();
+  await page.waitForFunction(() => window.game.score.t0 !== null, null, { timeout: 5000 });
+  assert.strictEqual(await page.evaluate(() => window.game.score.throws), 0);
+  await page.mouse.up();
+  await page.close();
+});
+
+test('scoring: par run = cans x 100, better is higher, both efficiencies cap at x1.5', async () => {
   const { page } = await openPage();
   const r = await page.evaluate(() => {
     const c = window.game.computePoints;
@@ -594,7 +648,7 @@ test('scoring: par run = cans x 100, better is higher, both efficiencies cap at 
   });
   assert.strictEqual(r.par, 1000);
   assert.ok(r.fast > r.par && r.few > r.par, 'faster / fewer throws must score higher');
-  assert.strictEqual(r.best, 2000, 'capped at cans x 200');
+  assert.strictEqual(r.best, 1500, 'capped at cans x 150');
   assert.ok(r.slow < r.par && r.wild < r.par);
   assert.strictEqual(r.six, 600);
   await page.close();

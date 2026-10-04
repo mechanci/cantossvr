@@ -221,7 +221,7 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { mem[k] = v; } },
 };
 const SETTINGS_KEY = 'cantoss.settings', BOARD_KEY = 'cantoss.leaderboard.v1';
-const MIN_ROWS = 3, MAX_ROWS = 6, BOARD_SIZE = 10, MAX_NAME = 8;
+const MIN_ROWS = 3, MAX_ROWS = 8, BOARD_SIZE = 10, MAX_NAME = 8;
 const PLACEHOLDER_NAME = 'PLAYER'; // shown in the name field until the player types; never remembered from an earlier game
 const isCoarse = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches); // phones and tablets start on the lighter quality
 const settings = Object.assign({ rows: 4, quality: isCoarse ? 'low' : 'high', tutorialDone: false, name: 'AAA', pointerLock: true }, store.get(SETTINGS_KEY, {}));
@@ -232,12 +232,12 @@ settings.pointerLock = settings.pointerLock !== false;
 const saveSettings = () => store.set(SETTINGS_KEY, settings);
 const canCount = (rows) => rows * (rows + 1) / 2;
 
-// Score = cans x 50 x (throw efficiency + time efficiency), each efficiency capped at 2.
+// Score = cans x 50 x (throw efficiency + time efficiency), each efficiency capped at 1.5.
 // Par is 0.8 throws per can and 6 s per can, so a par run scores cans x 100.
 function computePoints(n, throws, time) {
   const parThrows = Math.ceil(n * 0.8), parTime = n * 6;
-  const throwEff = Math.min(2, parThrows / Math.max(1, throws));
-  const timeEff = Math.min(2, parTime / Math.max(1, time));
+  const throwEff = Math.min(1.5, parThrows / Math.max(1, throws));
+  const timeEff = Math.min(1.5, parTime / Math.max(1, time));
   return { points: Math.round(n * 50 * (throwEff + timeEff)), throwEff, timeEff, parThrows, parTime };
 }
 
@@ -915,14 +915,15 @@ function canMesh(i) {
   g.add(new THREE.Mesh(canBodyGeo, mat.tin), new THREE.Mesh(canLabelGeo, canLabelMats[i % 3]), new THREE.Mesh(canRimGeo, mat.tin));
   return g;
 }
-function makeCan(x, y, z, i) {
+function makeCan(x, y, z, i, { scale = 1, mass = CAN_MASS } = {}) {
   const mesh = canMesh(i);
+  mesh.scale.setScalar(scale); // the mesh scales; the collider below follows it
   // Box collider slightly inside the visual cylinder: cannon's cylinder contacts jitter,
   // which makes stacked cans creep and topple on their own.
-  const he = CAN_R * 0.97;
+  const he = CAN_R * 0.97 * scale;
   const body = new CANNON.Body({
-    mass: CAN_MASS, material: M.can, linearDamping: 0.1, angularDamping: 0.3,
-    shape: new CANNON.Box(new CANNON.Vec3(he, CAN_H / 2, he)),
+    mass, material: M.can, linearDamping: 0.1, angularDamping: 0.3,
+    shape: new CANNON.Box(new CANNON.Vec3(he, CAN_H * scale / 2, he)),
   });
   body.kind = 'can';
   body.pitch = rnd(1200, 1900);
@@ -995,16 +996,37 @@ function updateLooseBalls(dt) {
   }
 }
 
-// Triangle pyramid with settings.rows rows (3..6 => 6, 10, 15 or 21 cans): every can sits centred on the two below it.
-function buildTower() {
+// Every round is a triangle pyramid with settings.rows rows (3..8 => 6 to 36 cans), but its look and feel are picked at random:
+// gaps between cans (tight or loose, so one hit does not chain through the lot), can size, and can weight (heavy cans need a real hit).
+// settings.spec === 'classic' pins today's tight, standard, light pyramid (the tests use it).
+const SPEC_GAPS = [{ id: 'tight', gap: 0.006 }, { id: 'loose', gap: 0.02 }, { id: 'wide', gap: 0.035 }];
+const SPEC_SIZES = [{ id: 'mini', scale: 0.85 }, { id: 'standard', scale: 1 }, { id: 'large', scale: 1.15 }];
+const SPEC_WEIGHTS = [{ id: 'light', mass: CAN_MASS }, { id: 'heavy', mass: CAN_MASS * 2 }];
+const CLASSIC_SPEC = { gap: SPEC_GAPS[0], size: SPEC_SIZES[1], weight: SPEC_WEIGHTS[0] };
+const pick = (list) => list[(Math.random() * list.length) | 0];
+let lastSpecKey = '';
+const specKey = (sp) => `${sp.gap.id}/${sp.size.id}/${sp.weight.id}`;
+function makePyramidSpec() {
+  if (settings.spec === 'classic') return CLASSIC_SPEC;
+  let sp;
+  for (let tries = 0; tries < 20; tries++) {
+    sp = { gap: pick(SPEC_GAPS), size: pick(SPEC_SIZES), weight: pick(SPEC_WEIGHTS) };
+    if (specKey(sp) !== lastSpecKey) break; // never the same look twice in a row
+  }
+  return sp;
+}
+const specLabel = (sp) => [sp.gap.id !== 'tight' && `${sp.gap.id} gaps`, sp.size.id !== 'standard' && `${sp.size.id} cans`, sp.weight.id === 'heavy' && 'heavy'].filter(Boolean).join(' · ') || 'classic';
+let currentSpec = CLASSIC_SPEC;
+function buildTower(spec = makePyramidSpec()) {
   while (cans.length) removeItem(cans[0], cans);
-  const rows = settings.rows, s = CAN_R * 2 + 0.006, gap = 0.001;
-  const y0 = TABLE_TOP + CAN_H / 2 + gap;
+  currentSpec = spec; lastSpecKey = specKey(spec);
+  const rows = settings.rows, k = spec.size.scale, s = CAN_R * 2 * k + spec.gap.gap, gap = 0.001;
+  const y0 = TABLE_TOP + CAN_H * k / 2 + gap;
   let id = 0;
   for (let row = 0; row < rows; row++) {
     const n = rows - row;
     for (let i = 0; i < n; i++) {
-      const c = makeCan((i - (n - 1) / 2) * s, y0 + row * (CAN_H + gap), -4, id++);
+      const c = makeCan((i - (n - 1) / 2) * s, y0 + row * (CAN_H * k + gap), -4, id++, { scale: k, mass: spec.weight.mass });
       c.body.sleep(); // stays perfectly still until something hits it
     }
   }
@@ -1044,7 +1066,7 @@ function updateScore() {
   for (const c of cans) {
     const q = c.body.quaternion;
     const upY = 1 - 2 * (q.x * q.x + q.z * q.z); // how upright the can is
-    if (c.body.position.y < TABLE_TOP - 0.03 || upY < 0.5) down++;
+    if (c.body.position.y < TABLE_TOP - 0.03 || upY < 0.3) down++; // off the table, or lying nearly flat (leaning on it does not count)
   }
   score.down = down;
   if (down === cans.length && cans.length > 0 && !score.won) onWin();
@@ -1147,6 +1169,7 @@ function grab(hand) {
   }
   if (best) {
     hand.held = best; best.heldBy = hand;
+    if (score.t0 === null && !score.won) score.t0 = performance.now(); // the clock starts with the first ball you pick up
     freeSlotOf(best); // a new ball appears on the stand in its place
     play('grab', best.mesh.position, 0.6);
     haptic(hand, 0.3, 40);
@@ -1384,7 +1407,7 @@ function drawPanel() {
 
   if (sc === 'main') {
     title('Can toss');
-    drawText(g, `${settings.rows} rows · ${canCount(settings.rows)} cans`, PANEL_W / 2, 250, { font: fnt(600, 24), color: UI.heading, align: 'center' });
+    drawText(g, `${settings.rows} rows · ${canCount(settings.rows)} cans · ${specLabel(currentSpec)}`, PANEL_W / 2, 250, { font: fnt(600, 24), color: UI.heading, align: 'center' });
     label('PYRAMID SIZE', PANEL_W / 2, 278, { align: 'center' });
     } else if (sc === 'controls') {
     title('Controls');
@@ -1405,7 +1428,7 @@ function drawPanel() {
     const list = topFor(panel.viewRows).slice(0, BOARD_SIZE);
     if (panel.showScoring) { // hidden by default: how the score is worked out
       wrapText(g, 'Score = cans × 50 × (throw efficiency + time efficiency).', 40, 200, 432, 30, { font: fnt(500, 21), color: UI.ink });
-      wrapText(g, 'Each efficiency is capped at ×2. Par is 0.8 throws and 6 seconds per can, so a par run scores cans × 100. Fewer throws and a faster time score higher.', 40, 280, 432, 28, { font: fnt(300, 19), color: UI.muted });
+      wrapText(g, 'Each efficiency is capped at ×1.5. Par is 0.8 throws and 6 seconds per can, so a par run scores cans × 100. Fewer throws and a faster time score higher.', 40, 280, 432, 28, { font: fnt(300, 19), color: UI.muted });
     } else {
       label('# NAME', 40, 158); label('SCORE', 270, 158, { align: 'right' }); label('THROWS', 372, 158, { align: 'right' }); label('TIME', 472, 158, { align: 'right' });
       g.fillStyle = UI.lineStrong; g.fillRect(36, 173, 440, 2);
@@ -1658,6 +1681,7 @@ function updateAim() {
   const charging = active && aim.down && (aim.locked || moved < 5);
   const held = charging ? (performance.now() - aim.t0) / 1000 : 0;
   aim.power = chargePower(held);
+  if (charging && held > 0.15 && score.t0 === null && !score.won) score.t0 = performance.now(); // the clock starts when you begin to aim, not at the first throw
   aim.charge = Math.min(1, Math.max(0, (held - CHARGE_DELAY) / CHARGE_TIME));
   aimEls.cross.style.display = active ? 'block' : 'none';
   aimEls.hint.style.display = active && !aim.locked ? 'block' : 'none';
@@ -1898,7 +1922,7 @@ if (!settings.tutorialDone) openPanel('controls'); // first run only
 // handle for tests / debugging
 window.game = { sun, getArc: () => arcObj, boothG, BOOTH_Z, COUNTER_Z, COUNTER_TOP, BACKWALL_Z, farScenery, typeKey, tuning, aim, predictArc, chargePower, typingName, boardCanvas, panelCanvas, vrButton, THREE, scene, camera, rig, renderer, world, cans, balls, slots, hands, score, audio, panel, menuMesh, settings, FX, banner,
   play, resetScene, resetCans, spawnBalls, throwBall, grab, release, quitVR, openPanel, closePanel, togglePanel, setRows, setQuality,
-  computePoints, addScore, topFor, loadBoard, exportBoard, importBoard, rankFor, celebrate, getSimTime: () => simTime };
+  computePoints, setSpec: (sp) => { buildTower(sp); }, specLabel, SPEC_GAPS, SPEC_SIZES, SPEC_WEIGHTS, getSpec: () => currentSpec, addScore, topFor, loadBoard, exportBoard, importBoard, rankFor, celebrate, getSimTime: () => simTime };
 </script>
 </body>
 </html>
