@@ -94,9 +94,9 @@ test('cans sit stably on the table (physics works, nothing falls or drifts)', as
   await settle(page, 3000);
   const after = await snap(page);
   after.cans.forEach((p, i) => {
-    assert.ok(p[1] > 0.8, `can ${i} fell below table top: y=${p[1]}`);
-    assert.ok(Math.abs(p[0] - before.cans[i][0]) < 0.05, `can ${i} drifted in x`);
-    assert.ok(Math.abs(p[2] - before.cans[i][2]) < 0.05, `can ${i} drifted in z`);
+    assert.ok(p[1] > 0.9, `can ${i} fell below table top: y=${p[1]}`);
+    assert.ok(Math.abs(p[0] - before.cans[i][0]) < 0.02, `can ${i} drifted in x`);
+    assert.ok(Math.abs(p[2] - before.cans[i][2]) < 0.02, `can ${i} drifted in z`);
   });
   await page.close();
 });
@@ -113,12 +113,13 @@ test('a thrown ball (mouse click) falls under gravity and knocks cans over', asy
   const { page } = await openPage();
   await settle(page);
   const before = await snap(page);
-  // aim at the table: camera looks down -z already
+  // aim slightly down so the arc reaches the cans (camera already looks down -z)
+  await page.evaluate(() => { window.game.camera.rotation.x = -0.05; });
   for (let i = 0; i < 4; i++) { await page.mouse.click(400, 300); await page.waitForTimeout(400); }
   await settle(page, 3000);
   const after = await snap(page);
   const moved = after.cans.filter((p, i) =>
-    Math.hypot(p[0] - before.cans[i][0], p[2] - before.cans[i][2]) > 0.1 || p[1] < before.cans[i][1] - 0.1);
+    Math.hypot(p[0] - before.cans[i][0], p[2] - before.cans[i][2]) > 0.05 || p[1] < before.cans[i][1] - 0.05);
   assert.ok(moved.length > 0, 'no can was disturbed by thrown balls');
   await page.close();
 });
@@ -209,6 +210,6 @@ test('Reset button rebuilds cans and balls', async () => {
   assert.deepStrictEqual(counts, [10, 4]);
   await settle(page, 1500);
   const { cans } = await snap(page);
-  assert.ok(cans.every(p => Math.abs(p[0]) < 1.2 && p[1] > 0.8), 'cans not back on the table');
+  assert.ok(cans.every(p => Math.abs(p[0]) < 0.7 && p[1] > 0.9), 'cans not back on the table');
   await page.close();
 });

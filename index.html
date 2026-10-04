@@ -38,11 +38,14 @@ import * as CANNON from 'cannon-es';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
-const BALL_RADIUS = 0.1;
-const GRAB_RANGE = 0.3;
-const TABLE_TOP = 0.8;
+// Real-world sizes (metres / kg): softball, standard 12 oz soda can, carnival counter height.
+const BALL_RADIUS = 0.048;          // 9.6 cm softball
+const BALL_MASS = 0.18;
+const GRAB_RANGE = 0.25;
+const TABLE_TOP = 0.9;
 const PEDESTAL_TOP = 0.9;
-const CAN_R = 0.15, CAN_H = 0.3;
+const CAN_R = 0.033, CAN_H = 0.122; // 6.6 cm x 12.2 cm
+const CAN_MASS = 0.1;               // weighted a little so a softball moves them like a carnival can
 
 // ---------- renderer / scene / camera ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -102,13 +105,13 @@ groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
 world.addBody(groundBody);
 
 // target table (top at y = 0.8) and ball pedestal (top at y = 0.9)
-addStaticBox(2.2, TABLE_TOP, 0.9, 0, TABLE_TOP / 2, -4, 0x8b5a2b);
-addStaticBox(1.0, PEDESTAL_TOP, 0.5, 0, PEDESTAL_TOP / 2, -0.8, 0x555555);
+addStaticBox(1.2, TABLE_TOP, 0.6, 0, TABLE_TOP / 2, -4, 0x8b5a2b);
+addStaticBox(0.8, PEDESTAL_TOP, 0.4, 0, PEDESTAL_TOP / 2, -0.8, 0x555555);
 
 // throwing line marker
-const ring = new THREE.Mesh(new THREE.RingGeometry(0.4, 0.5, 32), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+const ring = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.45, 32), new THREE.MeshBasicMaterial({ color: 0xffffff }));
 ring.rotation.x = -Math.PI / 2;
-ring.position.set(0, 0.01, -1.6);
+ring.position.set(0, 0.01, 0); // where you stand
 scene.add(ring);
 
 // ---------- cans and balls ----------
@@ -141,7 +144,7 @@ function makeCan(x, y, z, i) {
   // which makes stacked cans creep and topple on their own.
   const he = CAN_R * 0.97;
   const body = new CANNON.Body({
-    mass: 0.3, linearDamping: 0.1, angularDamping: 0.3,
+    mass: CAN_MASS, linearDamping: 0.1, angularDamping: 0.3,
     shape: new CANNON.Box(new CANNON.Vec3(he, CAN_H / 2, he)),
   });
   body.position.set(x, y, z);
@@ -153,7 +156,7 @@ function makeBall(x, y, z) {
     new THREE.SphereGeometry(BALL_RADIUS, 24, 16),
     new THREE.MeshStandardMaterial({ color: 0xf1c34e }));
   const body = new CANNON.Body({
-    mass: 0.3, linearDamping: 0.05, angularDamping: 0.2,
+    mass: BALL_MASS, linearDamping: 0.05, angularDamping: 0.2,
     shape: new CANNON.Sphere(BALL_RADIUS),
   });
   body.position.set(x, y, z);
@@ -165,7 +168,7 @@ function makeBall(x, y, z) {
 // Pyramid of 6 / 3 / 1 cans sitting on the table
 function buildTower() {
   while (cans.length) removeItem(cans[0], cans);
-  const s = CAN_R * 2 + 0.03, gap = 0.002;
+  const s = CAN_R * 2 + 0.008, gap = 0.001;
   const y0 = TABLE_TOP + CAN_H / 2 + gap;
   let id = 0;
   for (let i = 0; i < 6; i++) makeCan((i - 2.5) * s, y0, -4, id++);
@@ -178,7 +181,7 @@ function spawnBalls() {
     if (balls[0].heldBy) balls[0].heldBy.held = null;
     removeItem(balls[0], balls);
   }
-  for (let i = 0; i < 4; i++) makeBall(i * 0.2 - 0.3, PEDESTAL_TOP + BALL_RADIUS + 0.02, -0.8);
+  for (let i = 0; i < 4; i++) makeBall((i - 1.5) * 0.15, PEDESTAL_TOP + BALL_RADIUS + 0.01, -0.8);
 }
 
 function resetScene() {
@@ -277,7 +280,7 @@ window.addEventListener('mouseup', () => {
   dragging = false;
 });
 
-function throwBall(speed = 9) {
+function throwBall(speed = 8) {
   const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
   const p = camera.getWorldPosition(new THREE.Vector3()).addScaledVector(dir, 0.4);
   const ball = makeBall(p.x, p.y, p.z);
@@ -305,7 +308,8 @@ renderer.setAnimationLoop(() => {
   moveDesktop(dt);
   pollVRButtons();
   updateHands(dt);
-  world.step(1 / 60, dt, 3);
+  // small fixed step: a 9.6 cm ball at ~10 m/s must not tunnel through 6.6 cm cans
+  world.step(1 / 240, dt, 12);
   for (const { mesh, body } of dynamics) {
     mesh.position.copy(body.position);
     mesh.quaternion.copy(body.quaternion);
