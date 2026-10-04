@@ -16,6 +16,15 @@ const CDN = [
 let server, browser, base;
 test.before(async () => {
   server = http.createServer((req, res) => {
+    const url = decodeURIComponent(req.url.split('?')[0]);
+    if (url.startsWith('/assets/')) { // logo / favicon files
+      const file = path.join(root, url);
+      if (file.startsWith(path.join(root, 'assets')) && fs.existsSync(file)) {
+        res.setHeader('content-type', file.endsWith('.svg') ? 'image/svg+xml' : 'application/octet-stream');
+        return res.end(fs.readFileSync(file));
+      }
+      res.statusCode = 404; return res.end();
+    }
     res.setHeader('content-type', 'text/html');
     res.end(fs.readFileSync(path.join(root, 'index.html')));
   });
@@ -38,6 +47,7 @@ async function openPage({ tutorial = false } = {}) {
   await page.route('**/*', route => {
     const url = route.request().url();
     if (url.startsWith(base)) return route.continue();
+    if (/^https:\/\/fonts\.googleapis\.com\//.test(url)) return route.fulfill({ body: '', contentType: 'text/css' }); // web fonts are optional: fall back to system fonts
     for (const [re, dir] of CDN) {
       const m = url.match(re);
       if (m) return route.fulfill({ path: path.join(root, dir, m[1]), contentType: 'text/javascript' });
@@ -680,6 +690,7 @@ test('corrupted saved data does not break the game', async () => {
   await page.route('**/*', route => {
     const url = route.request().url();
     if (url.startsWith(base)) return route.continue();
+    if (/^https:\/\/fonts\.googleapis\.com\//.test(url)) return route.fulfill({ body: '', contentType: 'text/css' }); // web fonts are optional: fall back to system fonts
     for (const [re, dir] of CDN) { const m = url.match(re); if (m) return route.fulfill({ path: path.join(root, dir, m[1]), contentType: 'text/javascript' }); }
     return route.abort();
   });
@@ -695,5 +706,82 @@ test('the "?" help is collapsed by default and opens on click', async () => {
   assert.strictEqual(await page.isVisible('#help'), false);
   await page.click('#helpBtn');
   assert.strictEqual(await page.isVisible('#help'), true);
+  await page.close();
+});
+
+// ---------------------------------------------------------------- three vertex design alignment
+
+const pixel = (page, canvasKey, x, y) => page.evaluate(([k, x, y]) => Array.from(window.game[k].getContext('2d').getImageData(x, y, 1, 1).data), [canvasKey, x, y]);
+
+test('design: in-VR menu is flat deep navy with an orange primary button (brand tokens)', async () => {
+  const { page } = await openPage({ tutorial: true });     // first run opens the controls card
+  await page.waitForTimeout(500);
+  assert.deepStrictEqual((await pixel(page, 'panelCanvas', 20, 300)).slice(0, 3), [11, 28, 40], 'panel ground must be flat #0b1c28');
+  const b = await page.evaluate(() => window.game.panel.buttons.find(b => b.label === 'Got it'));
+  assert.ok(b.primary, '"Got it" should be the primary button');
+  assert.deepStrictEqual((await pixel(page, 'panelCanvas', b.x + 8, b.y + 8)).slice(0, 3), [255, 157, 85], 'primary button must be #ff9d55');
+  await page.close();
+});
+
+test('design: the lockup file loads into the menu footer', async () => {
+  const { page } = await openPage();
+  await page.evaluate(() => window.game.openPanel('main'));
+  await page.waitForFunction(() => window.game.logo.complete && window.game.logo.naturalWidth > 0);
+  await page.waitForTimeout(300);
+  // somewhere in the footer strip there must be orange logo pixels
+  const found = await page.evaluate(() => {
+    const d = window.game.panelCanvas.getContext('2d').getImageData(36, 676, 130, 28).data;
+    for (let i = 0; i < d.length; i += 4) if (d[i] > 240 && d[i + 1] > 140 && d[i + 1] < 175 && d[i + 2] < 110) return true;
+    return false;
+  });
+  assert.ok(found, 'orange lockup not drawn in the menu footer');
+  await page.close();
+});
+
+test('design: the scoreboard is navy while playing and turns orange when you win', async () => {
+  const { page } = await openPage();
+  await settle(page, 800);
+  assert.deepStrictEqual((await pixel(page, 'boardCanvas', 240, 10)).slice(0, 3), [11, 28, 40]);
+  await page.evaluate(() => { window.game.throwBall(); window.game.cans.forEach(c => c.body.position.set(3, 0.3, -2)); });
+  await page.waitForFunction(() => window.game.score.won);
+  await page.waitForTimeout(300);
+  assert.deepStrictEqual((await pixel(page, 'boardCanvas', 10, 10)).slice(0, 3), [255, 157, 85], 'win state is one flat orange field');
+  await page.close();
+});
+
+test('design: page chrome uses the brand look; boot screen is gone once the game renders', async () => {
+  const { page } = await openPage();
+  const r = await page.evaluate(() => {
+    const cs = (sel, p) => getComputedStyle(document.querySelector(sel))[p];
+    return {
+      bodyBg: cs('body', 'backgroundColor'), menuBg: cs('#menuBtn', 'backgroundColor'), menuText: cs('#menuBtn', 'color'),
+      resetBg: cs('#resetBtn', 'backgroundColor'), radius: cs('#resetBtn', 'borderTopLeftRadius'),
+      font: cs('#resetBtn', 'fontFamily'), vr: cs('#VRButton', 'backgroundColor'), vrOff: document.querySelector('#VRButton').classList.contains('tv-off'),
+      vrRadius: cs('#VRButton', 'borderTopLeftRadius'), boot: cs('#boot', 'display'), favicon: document.querySelector('link[rel=icon]').getAttribute('href'),
+    };
+  });
+  assert.strictEqual(r.bodyBg, 'rgb(11, 28, 40)');
+  assert.strictEqual(r.menuBg, 'rgb(255, 157, 85)');
+  assert.strictEqual(r.menuText, 'rgb(31, 66, 96)');
+  assert.strictEqual(r.resetBg, 'rgb(19, 41, 58)');
+  assert.strictEqual(r.radius, '4px');
+  assert.match(r.font, /Lexend/);
+  assert.ok(r.vrOff, 'headless has no VR: the button must read as inactive');
+  assert.strictEqual(r.vr, 'rgb(19, 41, 58)');
+  assert.strictEqual(r.vrRadius, '4px');
+  assert.strictEqual(r.boot, 'none');
+  assert.match(r.favicon, /threevertex-mark-on-navy\.svg$/);
+  await page.close();
+});
+
+test('design: the "?" help card is styled with keycaps and opens/closes', async () => {
+  const { page } = await openPage();
+  await page.click('#helpBtn');
+  assert.ok(await page.isVisible('#help'));
+  assert.ok((await page.locator('#help kbd').count()) >= 8);
+  const bg = await page.evaluate(() => getComputedStyle(document.querySelector('#help')).backgroundColor);
+  assert.strictEqual(bg, 'rgb(19, 41, 58)');
+  await page.click('#helpBtn');
+  assert.strictEqual(await page.isVisible('#help'), false);
   await page.close();
 });

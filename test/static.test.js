@@ -90,3 +90,49 @@ test('help text is collapsed by default (not an always-on overlay)', () => {
   assert.match(html, /#help \{\s*display: none/);
   assert.match(html, /id="helpBtn"/);
 });
+
+// ---------------------------------------------------------------- three vertex design alignment
+
+test('design: fonts load from Google Fonts (Lexend + IBM Plex Mono, display=swap) with system fallbacks', () => {
+  assert.match(html, /fonts\.googleapis\.com\/css2\?family=Lexend:wght@300;400;500;600;700&family=IBM\+Plex\+Mono:wght@400;500&display=swap/);
+  assert.match(moduleSrc, /FONT_SANS = 'Lexend, "Segoe UI", Calibri/);
+  assert.match(moduleSrc, /FONT_MONO = '"IBM Plex Mono", Consolas/);
+});
+
+test('design: brand tokens are defined and the legacy off-brand UI colours are gone', () => {
+  for (const hex of ['#ff9d55', '#0b1c28', '#13293a', '#1f4260', '#7d98ae', '#24405a', '#a3b1bd']) {
+    assert.ok(html.toLowerCase().includes(hex), `missing token ${hex}`);
+  }
+  // old gold/grey/green/red UI colours must not creep back
+  for (const old of ['#ffe9a8\'', '#e0a526', '#2d3340', '#9fb0c8', '#7dffa0', '#ff9a8a', '#ff8a7a', '#6f7d92']) {
+    // #ffe9a8 is still the booth sign / bulb colour in the world, so only the UI use (quoted in canvas code) is checked
+    const inUi = moduleSrc.split('\n').filter(l => l.includes(old) && !/signTex\(|bulbMat|PointLight|0xffe9a8/.test(l));
+    assert.deepStrictEqual(inUi, [], `legacy colour ${old} used in UI code`);
+  }
+});
+
+test('design: canvas text goes through the font helpers (no bare sans-serif font strings)', () => {
+  assert.doesNotMatch(moduleSrc, /\d+px sans-serif/);
+  assert.match(html, /--tv-font-sans: Lexend/);
+});
+
+test('design: UI is square-ish (radius <= 4px) and flat (no gradients in UI css)', () => {
+  const css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+  for (const m of css.matchAll(/border-radius:\s*([^;]+);/g)) {
+    assert.ok(/var\(--tv-radius\)|9999px/.test(m[1]) || parseFloat(m[1]) <= 4, `radius too round: ${m[1]}`);
+  }
+  assert.doesNotMatch(css, /gradient\(/);
+  assert.doesNotMatch(moduleSrc, /createLinearGradient\([\s\S]{0,200}YOU WIN/); // win banner is flat orange
+});
+
+test('design: logo and favicon files exist and are used', () => {
+  for (const f of ['threevertex-lockup-orange.svg', 'threevertex-mark-on-navy.svg']) {
+    assert.ok(fs.existsSync(path.join(__dirname, '..', 'assets', f)), `missing assets/${f}`);
+    assert.ok(html.includes(`assets/${f}`), `assets/${f} is not referenced`);
+  }
+});
+
+test('design: the brand name is never typed in running UI text (the logo is a file)', () => {
+  assert.doesNotMatch(moduleSrc, /(fillText|drawText)\([^)]*three vertex/i);
+  assert.doesNotMatch(moduleSrc, /Three Vertex|ThreeVertex|3Vertex/);
+});

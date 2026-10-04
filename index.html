@@ -1,27 +1,85 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>VR Can Toss</title>
+  <title>Can Toss VR — three vertex</title>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b1c28">
+  <link rel="icon" type="image/svg+xml" href="assets/threevertex-mark-on-navy.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
   <style>
-    body { margin: 0; overflow: hidden; background: #87CEEB; }
+    /* three vertex design system tokens, dark theme (project/tokens.json v0.1.0). Game-first: these style the
+       interface only; the carnival booth and the 3D world keep their own colours. */
+    :root {
+      --tv-navy: #0b1c28; --tv-raised: #13293a; --tv-highlight: #1e3a50;
+      --tv-heading: #ffffff; --tv-ink: #f2f5f7; --tv-muted: #a3b1bd;
+      --tv-orange: #ff9d55; --tv-on-accent: #1f4260;
+      --tv-line: #24405a; --tv-line-strong: #7d98ae;
+      --tv-radius: 4px;
+      --tv-font-sans: Lexend, "Segoe UI", Calibri, system-ui, sans-serif;
+      --tv-font-mono: "IBM Plex Mono", Consolas, "SF Mono", monospace;
+    }
+    body { margin: 0; overflow: hidden; background: var(--tv-navy); font-family: var(--tv-font-sans); }
     canvas { display: block; }
-    #bar { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 999; display: flex; gap: 10px; }
-    #bar button {
-      padding: 12px 24px; font-size: 18px; font-family: sans-serif;
-      background: #222; color: white; border: none; border-radius: 8px; cursor: pointer;
+    :focus-visible { outline: 2px solid var(--tv-orange); outline-offset: 2px; }
+
+    /* buttons (design system: Button) */
+    .tv-btn {
+      display: inline-flex; align-items: center; font: 600 15px/1 var(--tv-font-sans); padding: 12px 20px;
+      border-radius: var(--tv-radius); border: 1px solid transparent; cursor: pointer;
+      transition: background .15s, border-color .15s, color .15s;
     }
+    .tv-btn--primary { background: var(--tv-orange); color: var(--tv-on-accent); }
+    .tv-btn--primary:hover { box-shadow: inset 0 0 0 2px var(--tv-navy); }
+    .tv-btn--secondary { background: var(--tv-raised); color: var(--tv-ink); border-color: var(--tv-line-strong); }
+    .tv-btn--secondary:hover { border-color: var(--tv-ink); }
+    #bar { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 999; display: flex; gap: 8px; }
+
+    /* three's default "Enter VR" button, restyled */
+    #VRButton {
+      position: fixed !important; bottom: 20px !important; left: 50% !important; right: auto !important;
+      transform: translateX(-50%); width: auto !important; min-width: 150px; padding: 13px 24px !important;
+      border: 1px solid transparent !important; border-radius: var(--tv-radius) !important;
+      background: var(--tv-orange) !important; color: var(--tv-on-accent) !important;
+      font: 600 14px/1 var(--tv-font-sans) !important; letter-spacing: .06em; opacity: 1 !important;
+    }
+    #VRButton:hover { box-shadow: inset 0 0 0 2px var(--tv-navy); }
+    #VRButton.tv-off {
+      background: var(--tv-raised) !important; color: var(--tv-muted) !important;
+      border-color: var(--tv-line) !important; cursor: default !important; box-shadow: none;
+    }
+
+    /* help: collapsed behind "?" */
     #helpBtn {
-      position: fixed; right: 16px; bottom: 16px; z-index: 999; width: 40px; height: 40px; border-radius: 50%;
-      background: rgba(20,20,26,0.75); color: #fff; border: 1px solid rgba(255,255,255,0.4);
-      font: bold 20px sans-serif; cursor: pointer;
+      position: fixed; right: 16px; bottom: 16px; z-index: 999; width: 40px; height: 40px;
+      background: var(--tv-raised); color: var(--tv-ink); border: 1px solid var(--tv-line-strong);
+      border-radius: var(--tv-radius); font: 500 18px var(--tv-font-mono); cursor: pointer;
     }
+    #helpBtn:hover { border-color: var(--tv-ink); }
     #help {
-      display: none; position: fixed; right: 16px; bottom: 64px; z-index: 999; max-width: 300px;
-      background: rgba(20,20,26,0.88); color: #fff; font: 14px/1.5 sans-serif; padding: 12px 14px; border-radius: 10px;
+      display: none; position: fixed; right: 16px; bottom: 64px; z-index: 999; width: 280px; box-sizing: border-box;
+      background: var(--tv-raised); color: var(--tv-ink); border: 1px solid var(--tv-line); border-radius: var(--tv-radius);
+      padding: 16px; font: 300 14px/1.5 var(--tv-font-sans); box-shadow: 0 8px 24px rgba(11, 28, 40, 0.12);
     }
     #help.open { display: block; }
+    #help h2 { margin: 0 0 8px; font: 500 11px var(--tv-font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--tv-orange); }
+    #help h2:not(:first-child) { margin-top: 14px; }
+    #help dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: center; }
+    #help dd { margin: 0; }
+    #help kbd {
+      font: 500 11px var(--tv-font-mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap;
+      color: var(--tv-ink); border: 1px solid var(--tv-line-strong); border-radius: 2px; padding: 2px 6px;
+    }
+
+    /* shown until the first frame renders (or if the 3D libraries cannot be reached) */
+    #boot {
+      position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 14px; background: var(--tv-navy); color: var(--tv-muted); font: 500 12px var(--tv-font-mono); letter-spacing: .14em; text-transform: uppercase;
+    }
+    #boot::before { content: ""; width: 14px; height: 14px; border-radius: 9999px; background: var(--tv-orange); }
+    #boot.done { display: none; }
   </style>
   <script type="importmap">
   {
@@ -34,10 +92,38 @@
   </script>
 </head>
 <body>
-<div id="bar"><button id="resetBtn">Reset Cans</button><button id="refillBtn">Refill Balls</button><button id="menuBtn">Menu</button></div>
-<button id="helpBtn" title="Controls">?</button>
-<div id="help"><b>Desktop</b><br>Click: throw &middot; Drag: look &middot; WASD: move<br>R: reset cans &middot; M: menu<br>
-<b>VR</b><br>Trigger/Grip: grab &amp; throw &middot; A: reset cans<br>X: menu &middot; Y: refill balls &middot; B (hold): quit</div>
+<div id="boot"><span id="bootText">Loading can toss</span></div>
+<div id="bar">
+  <button id="resetBtn" class="tv-btn tv-btn--secondary">Reset Cans</button>
+  <button id="refillBtn" class="tv-btn tv-btn--secondary">Refill Balls</button>
+  <button id="menuBtn" class="tv-btn tv-btn--primary">Menu</button>
+</div>
+<button id="helpBtn" title="Controls" aria-label="Controls">?</button>
+<div id="help" role="dialog" aria-label="Controls">
+  <h2>Desktop</h2>
+  <dl>
+    <dt><kbd>Click</kbd></dt><dd>throw a ball</dd>
+    <dt><kbd>Drag</kbd></dt><dd>look around</dd>
+    <dt><kbd>WASD</kbd></dt><dd>move</dd>
+    <dt><kbd>R</kbd></dt><dd>reset cans</dd>
+    <dt><kbd>M</kbd></dt><dd>menu</dd>
+  </dl>
+  <h2>VR</h2>
+  <dl>
+    <dt><kbd>Trigger / Grip</kbd></dt><dd>grab and throw</dd>
+    <dt><kbd>A</kbd></dt><dd>reset cans</dd>
+    <dt><kbd>X</kbd></dt><dd>menu</dd>
+    <dt><kbd>Y</kbd></dt><dd>refill balls</dd>
+    <dt><kbd>B</kbd> hold</dt><dd>quit VR</dd>
+  </dl>
+</div>
+<script>
+  // If the 3D libraries never arrive (blocked CDN, no network), say so instead of showing a blank screen.
+  setTimeout(function () {
+    var b = document.getElementById('boot');
+    if (b && !b.classList.contains('done')) document.getElementById('bootText').textContent = 'Still loading. Check your connection (cdn.jsdelivr.net must be reachable)';
+  }, 12000);
+</script>
 
 <script type="module">
 import * as THREE from 'three';
@@ -56,6 +142,42 @@ const CAN_R = 0.033, CAN_H = 0.122; // 6.6 cm x 12.2 cm
 const CAN_MASS = 0.1;               // weighted a little so a softball moves them like a carnival can
 const THROW_ASSIST = 1.6;           // release speed multiplier: a relaxed flick carries a full throw
 const MAX_THROW_SPEED = 18;         // m/s
+
+// ---------- three vertex look: design-system tokens (dark theme) + fonts for the canvas-drawn UI ----------
+// Values mirror the design system (project/tokens.json v0.1.0). Game-first: they style menus, panels, the scoreboard
+// and hints; the booth, cans and ball keep their own carnival colours. Brand rules kept here: flat colour, one orange,
+// square edges (4px max), hairlines instead of shadows, no red (states use words and glyphs).
+const TV = { orange: '#ff9d55', navy: '#0b1c28', raised: '#13293a', highlight: '#1e3a50', heading: '#ffffff', ink: '#f2f5f7',
+             muted: '#a3b1bd', line: '#24405a', lineStrong: '#7d98ae', onAccent: '#1f4260' };
+const FONT_SANS = 'Lexend, "Segoe UI", Calibri, system-ui, sans-serif';
+const FONT_MONO = '"IBM Plex Mono", Consolas, "SF Mono", monospace';
+const fnt = (weight, px, mono = false) => `${weight} ${px}px ${mono ? FONT_MONO : FONT_SANS}`;
+
+// Canvases that carry text are drawn once with fallback fonts and redrawn when Lexend / IBM Plex Mono arrive.
+const fontRedraws = [];
+const onFontsReady = (fn) => { fontRedraws.push(fn); };
+if (document.fonts && document.fonts.load) {
+  Promise.all(['300 16px Lexend', '400 16px Lexend', '600 16px Lexend', '700 16px Lexend', '500 14px "IBM Plex Mono"']
+    .map(f => document.fonts.load(f))).then(() => fontRedraws.forEach(fn => fn())).catch(() => {});
+}
+function drawText(g, s, x, y, { font, color, align = 'left', ls = 0 }) {
+  g.font = font; g.fillStyle = color; g.textAlign = align; g.textBaseline = 'middle';
+  const spaced = ls && 'letterSpacing' in g;
+  if (spaced) g.letterSpacing = `${ls}px`;
+  g.fillText(s, x, y);
+  if (spaced) g.letterSpacing = '0px';
+}
+function wrapText(g, s, x, y, maxW, lh, opts) { // returns the number of lines drawn
+  g.font = opts.font;
+  const lines = []; let line = '';
+  for (const word of s.split(' ')) {
+    const t = line ? `${line} ${word}` : word;
+    if (g.measureText(t).width > maxW && line) { lines.push(line); line = word; } else line = t;
+  }
+  if (line) lines.push(line);
+  lines.forEach((l, i) => drawText(g, l, x, y + i * lh, opts));
+  return lines.length;
+}
 
 // ---------- settings + local leaderboard (localStorage; falls back to memory if storage is blocked) ----------
 const mem = {};
@@ -138,7 +260,12 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
-document.body.appendChild(VRButton.createButton(renderer));
+const vrButton = VRButton.createButton(renderer);
+document.body.appendChild(vrButton);
+// three swaps the label to "VR NOT SUPPORTED" when there is no headset; style that state as inactive
+new MutationObserver(() => vrButton.classList.toggle('tv-off', /NOT/i.test(vrButton.textContent)))
+  .observe(vrButton, { childList: true, characterData: true, subtree: true });
+vrButton.classList.toggle('tv-off', /NOT/i.test(vrButton.textContent));
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xbfe3ff);
@@ -173,11 +300,12 @@ window.addEventListener('resize', () => {
 });
 
 // ---------- procedural textures (drawn on canvases: nothing to download) ----------
-function canvasTex(w, h, draw, repeat) {
+function canvasTex(w, h, draw, repeat, hasText = false) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c);
+  if (hasText) onFontsReady(() => { draw(c.getContext('2d'), w, h); t.needsUpdate = true; });
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
@@ -219,9 +347,9 @@ function canTex(base, accent, name) {
     g.fillStyle = '#d9dde0'; g.fillRect(0, 0, w, h * 0.1); g.fillRect(0, h * 0.9, w, h * 0.1);
     g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(w * 0.08, 0, w * 0.04, h); // highlight
     g.fillStyle = base === '#c0392b' ? '#fff' : '#1b2a6b';
-    g.font = 'bold 54px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = fnt(700, 52); g.textAlign = 'center'; g.textBaseline = 'middle';
     for (const u of [0.25, 0.75]) g.fillText(name, w * u, h * 0.5);
-  });
+  }, null, true);
 }
 
 const ballTex = canvasTex(512, 256, (g, w, h) => {
@@ -246,9 +374,9 @@ const ballTex = canvasTex(512, 256, (g, w, h) => {
 const signTex = (text, bg, fg, w = 512, h = 128) => canvasTex(w, h, (g) => {
   g.fillStyle = bg; g.fillRect(0, 0, w, h);
   g.strokeStyle = fg; g.lineWidth = 6; g.strokeRect(6, 6, w - 12, h - 12);
-  g.fillStyle = fg; g.font = `bold ${h * 0.55}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = fg; g.font = fnt(700, h * 0.52); g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillText(text, w / 2, h / 2 + 4);
-});
+}, null, true);
 
 const std = (opts) => new THREE.MeshStandardMaterial({ envMapIntensity: 0.35, ...opts });
 
@@ -505,20 +633,34 @@ plane(1.1, 0.34, new THREE.MeshBasicMaterial({ map: boardTex }), 0, 2.03, -5.17)
 const score = { down: 0, throws: 0, won: false, t0: null, time: 0 };
 const elapsed = () => score.won ? score.time : score.t0 === null ? 0 : (performance.now() - score.t0) / 1000;
 let lastScoreKey = '';
+const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 function drawBoard() {
   const key = `${score.down}/${cans.length}/${score.throws}/${score.won}/${Math.floor(elapsed())}`;
   if (key === lastScoreKey) return;
   lastScoreKey = key;
-  const g = boardCanvas.getContext('2d');
-  g.fillStyle = '#111'; g.fillRect(0, 0, 512, 160);
-  g.strokeStyle = '#ffe9a8'; g.lineWidth = 6; g.strokeRect(6, 6, 500, 148);
-  g.fillStyle = '#ffe9a8'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.font = 'bold 54px sans-serif';
-  g.fillText(score.won ? 'YOU WIN!' : `CANS DOWN ${score.down}/${cans.length}`, 256, 56);
-  g.font = '34px sans-serif';
-  g.fillText(`TIME ${fmtTime(elapsed())}    THROWS ${score.throws}`, 256, 116);
+  const g = boardCanvas.getContext('2d'), W = 512, H = 160;
+  if (score.won) { // the one big orange field: the win state
+    g.fillStyle = TV.orange; g.fillRect(0, 0, W, H);
+    drawText(g, 'YOU WIN!', W / 2, 62, { font: fnt(700, 66), color: TV.onAccent, align: 'center' });
+    drawText(g, `${mmss(elapsed())}  ·  ${score.throws} ${score.throws === 1 ? 'THROW' : 'THROWS'}`, W / 2, 122,
+      { font: fnt(500, 24, true), color: TV.onAccent, align: 'center', ls: 2 });
+  } else {
+    g.fillStyle = TV.navy; g.fillRect(0, 0, W, H);
+    g.strokeStyle = TV.lineStrong; g.lineWidth = 4; g.strokeRect(2, 2, W - 4, H - 4);
+    g.fillStyle = TV.line; g.fillRect(256, 26, 2, H - 52);
+    drawText(g, 'CANS DOWN', 28, 36, { font: fnt(500, 17, true), color: TV.muted, ls: 2 });
+    const down = String(score.down);
+    drawText(g, down, 28, 100, { font: fnt(700, 72), color: TV.heading });
+    g.font = fnt(700, 72);
+    drawText(g, `/${cans.length}`, 28 + g.measureText(down).width + 6, 112, { font: fnt(400, 34), color: TV.muted });
+    drawText(g, 'TIME', 282, 36, { font: fnt(500, 17, true), color: TV.muted, ls: 2 });
+    drawText(g, mmss(elapsed()), 282, 100, { font: fnt(600, 46), color: TV.ink });
+    drawText(g, 'THROWS', 404, 36, { font: fnt(500, 17, true), color: TV.muted, ls: 2 });
+    drawText(g, String(score.throws), 404, 100, { font: fnt(600, 46), color: TV.ink });
+  }
   boardTex.needsUpdate = true;
 }
+onFontsReady(() => { lastScoreKey = ''; drawBoard(); });
 function registerThrow() { // called for every real throw (VR release or desktop click)
   score.throws++;
   if (score.t0 === null && !score.won) score.t0 = performance.now();
@@ -698,25 +840,34 @@ const tmp = new THREE.Vector3(), _v = new THREE.Vector3(), camPos = new THREE.Ve
 const controllerModels = new XRControllerModelFactory();
 
 function tipTexture(lines) {
-  const w = 420, h = 40 + lines.length * 44;
+  const w = 420, rowH = 46, h = 32 + lines.length * rowH;
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d');
-  g.fillStyle = 'rgba(15,15,20,0.82)';
-  g.beginPath(); g.roundRect(2, 2, w - 4, h - 4, 18); g.fill();
-  g.strokeStyle = '#ffe9a8'; g.lineWidth = 3; g.stroke();
-  g.font = 'bold 28px sans-serif'; g.textBaseline = 'middle';
+  g.beginPath(); g.roundRect(1, 1, w - 2, h - 2, 4); g.fillStyle = TV.raised; g.fill();
+  g.strokeStyle = TV.lineStrong; g.lineWidth = 2; g.stroke();
   lines.forEach(([key, text], i) => {
-    const y = 40 + i * 44;
-    g.fillStyle = '#ffe9a8'; g.textAlign = 'left'; g.fillText(key, 18, y);
-    g.fillStyle = '#fff'; g.font = '26px sans-serif'; g.fillText(text, 150, y); g.font = 'bold 28px sans-serif';
+    const y = 16 + i * rowH + rowH / 2;
+    g.beginPath(); g.arc(28, y, 5, 0, Math.PI * 2); g.fillStyle = TV.orange; g.fill(); // node dot
+    drawText(g, key, 46, y, { font: fnt(500, 21, true), color: TV.orange, ls: 1 });
+    drawText(g, text, 190, y, { font: fnt(400, 24), color: TV.ink });
   });
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return { tex: t, aspect: w / h };
 }
 const TIPS = {
-  right: [['TRIGGER', 'grab / throw'], ['GRIP', 'grab / throw'], ['A', 'reset cans'], ['B (hold)', 'quit VR']],
+  right: [['TRIGGER', 'grab / throw'], ['GRIP', 'grab / throw'], ['A', 'reset cans'], ['B (HOLD)', 'quit VR']],
   left:  [['TRIGGER', 'grab / throw'], ['GRIP', 'grab / throw'], ['X', 'menu'], ['Y', 'refill balls']],
 };
+function makeTip(hand) { // a small hint card above the controller; only fades in when held up to your face
+  if (hand.tip) { hand.ctrl.remove(hand.tip); hand.tip.material.map.dispose(); }
+  const { tex, aspect } = tipTexture(TIPS[hand.handedness] || TIPS.right);
+  hand.tip = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 }));
+  hand.tip.visible = false;
+  hand.tip.scale.set(0.2 * aspect, 0.2, 1);
+  hand.tip.position.set(0, 0.17, 0.03); // floats above the controller, clear of its buttons
+  hand.ctrl.add(hand.tip);
+}
+onFontsReady(() => hands.forEach(h => { if (h.handedness) makeTip(h); }));
 
 for (let i = 0; i < 2; i++) {
   const ctrl = renderer.xr.getController(i);
@@ -744,13 +895,7 @@ for (let i = 0; i < 2; i++) {
   ctrl.addEventListener('connected', (e) => {
     hand.handedness = (e.data && e.data.handedness) || (i === 0 ? 'left' : 'right');
     hand.connectedAt = simTime;
-    if (hand.tip) { ctrl.remove(hand.tip); hand.tip.material.map.dispose(); }
-    const { tex, aspect } = tipTexture(TIPS[hand.handedness] || TIPS.right);
-    hand.tip = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 }));
-    hand.tip.visible = false; // fades in only when you hold the controller up and look at it
-    hand.tip.scale.set(0.2 * aspect, 0.2, 1);
-    hand.tip.position.set(0, 0.17, 0.03); // floats above the controller, clear of its buttons
-    ctrl.add(hand.tip);
+    makeTip(hand);
   });
   for (const [down, up] of [['selectstart', 'selectend'], ['squeezestart', 'squeezeend']]) {
     ctrl.addEventListener(down, () => {
@@ -902,7 +1047,7 @@ function screenButtons() {
     btn(516, 'Quit VR', () => quitVR(), { right: 'B hold' }),
     btn(588, 'Close menu', () => closePanel(), { right: 'X' }),
   ];
-  if (sc === 'controls') return [btn(626, 'Got it', () => { settings.tutorialDone = true; saveSettings(); closePanel(); })];
+  if (sc === 'controls') return [btn(626, 'Got it', () => { settings.tutorialDone = true; saveSettings(); closePanel(); }, { primary: true })];
   if (sc === 'board') return [
     { id: 'prev', x: 36, y: 80, w: 70, h: 56, label: '◀', action: () => { panel.viewRows = Math.max(MIN_ROWS, panel.viewRows - 1); bump(); }, disabled: panel.viewRows <= MIN_ROWS, center: true },
     { id: 'next', x: 406, y: 80, w: 70, h: 56, label: '▶', action: () => { panel.viewRows = Math.min(MAX_ROWS, panel.viewRows + 1); bump(); }, disabled: panel.viewRows >= MAX_ROWS, center: true },
@@ -917,9 +1062,9 @@ function screenButtons() {
         out.push({ id: `up${i}`, x, y: 322, w: 70, h: 44, label: '▲', center: true, action: () => cycleName(i, 1) });
         out.push({ id: `dn${i}`, x, y: 430, w: 70, h: 44, label: '▼', center: true, action: () => cycleName(i, -1) });
       });
-      out.push(btn(504, 'Save score', () => saveResult(), { id: 'save' }));
+      out.push(btn(504, 'Save score', () => saveResult(), { id: 'save', primary: true }));
     }
-    out.push(btn(canSave ? 574 : 504, 'Play Again', () => resetCans()));
+    out.push(btn(canSave ? 574 : 504, 'Play Again', () => resetCans(), { primary: !canSave }));
     out.push(btn(canSave ? 644 : 574, res && res.saved ? 'Leaderboard' : 'Close', () => (res && res.saved ? (panel.viewRows = settings.rows, showScreen('board')) : closePanel()), { h: 56 }));
     return out;
   }
@@ -953,16 +1098,22 @@ function activatePanel(i) {
   b.action();
 }
 
-// ----- drawing -----
+// ----- drawing (three vertex look: flat navy, hairlines, one orange, square corners) -----
 function roundRect(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
 function drawButton(g, b, hot) {
-  roundRect(g, b.x, b.y, b.w, b.h, 14);
-  g.fillStyle = b.disabled ? '#22252d' : hot ? '#e0a526' : '#2d3340'; g.fill();
-  g.fillStyle = b.disabled ? '#555' : hot ? '#111' : '#fff';
-  g.font = `bold ${b.center ? 34 : 32}px sans-serif`;
-  g.textAlign = b.center ? 'center' : 'left';
-  g.fillText(b.label, b.center ? b.x + b.w / 2 : b.x + 20, b.y + b.h / 2 + 2);
-  if (b.right) { g.font = '24px sans-serif'; g.textAlign = 'right'; g.fillStyle = hot ? '#222' : '#ffe9a8'; g.fillText(b.right, b.x + b.w - 16, b.y + b.h / 2 + 2); }
+  const lit = hot && !b.disabled, onOrange = (b.primary && !b.disabled) || lit;
+  if (onOrange) {
+    roundRect(g, b.x, b.y, b.w, b.h, 4); g.fillStyle = TV.orange; g.fill();
+    if (b.primary && lit) { g.strokeStyle = TV.navy; g.lineWidth = 3; roundRect(g, b.x + 4, b.y + 4, b.w - 8, b.h - 8, 2); g.stroke(); }
+  } else {
+    roundRect(g, b.x + 1, b.y + 1, b.w - 2, b.h - 2, 4);
+    g.strokeStyle = b.disabled ? TV.line : TV.lineStrong; g.lineWidth = 2; g.stroke();
+  }
+  const text = onOrange ? TV.onAccent : b.disabled ? 'rgba(163,177,189,0.45)' : TV.ink;
+  drawText(g, b.label, b.center ? b.x + b.w / 2 : b.x + 20, b.y + b.h / 2 + 1,
+    { font: fnt(600, b.center ? 32 : 27), color: text, align: b.center ? 'center' : 'left' });
+  if (b.right) drawText(g, b.right.toUpperCase(), b.x + b.w - 16, b.y + b.h / 2 + 1,
+    { font: fnt(500, 15, true), color: onOrange ? TV.onAccent : TV.muted, align: 'right', ls: 1.5 });
 }
 function drawPanel() {
   const hovers = [...hands.map(h => h.hover), panel.mouseHover].join(',');
@@ -972,67 +1123,78 @@ function drawPanel() {
   panel.buttons = screenButtons();
   const g = panelCanvas.getContext('2d');
   g.clearRect(0, 0, PANEL_W, PANEL_H);
-  roundRect(g, 0, 0, PANEL_W, PANEL_H, 32); g.fillStyle = 'rgba(15,15,22,0.97)'; g.fill();
-  g.strokeStyle = '#ffe9a8'; g.lineWidth = 6; g.stroke();
-  g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillStyle = '#ffe9a8';
-  const title = (t, y = 44) => { g.font = 'bold 40px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#ffe9a8'; g.fillText(t, PANEL_W / 2, y); };
+  g.fillStyle = TV.navy; g.fillRect(0, 0, PANEL_W, PANEL_H);
+  g.strokeStyle = TV.lineStrong; g.lineWidth = 4; g.strokeRect(2, 2, PANEL_W - 4, PANEL_H - 4);
+  const title = (t, y = 44) => { // node dot + heading, left aligned
+    g.beginPath(); g.arc(48, y, 7, 0, Math.PI * 2); g.fillStyle = TV.orange; g.fill();
+    drawText(g, t, 68, y, { font: fnt(700, 32), color: TV.heading });
+  };
+  const label = (t, x, y, o = {}) => drawText(g, t, x, y, { font: fnt(500, 14, true), color: TV.muted, ls: 2, ...o });
   const sc = panel.screen;
 
   if (sc === 'main') {
-    title('CAN TOSS');
-    g.fillStyle = '#fff'; g.font = 'bold 28px sans-serif'; g.textAlign = 'center';
-    g.fillText(`${settings.rows} rows · ${canCount(settings.rows)} cans`, PANEL_W / 2, 258);
-    g.fillStyle = '#9fb0c8'; g.font = '20px sans-serif'; g.fillText('pyramid size', PANEL_W / 2, 284);
+    title('Can toss');
+    drawText(g, `${settings.rows} rows · ${canCount(settings.rows)} cans`, PANEL_W / 2, 250, { font: fnt(600, 24), color: TV.heading, align: 'center' });
+    label('PYRAMID SIZE', PANEL_W / 2, 278, { align: 'center' });
+    if (!panel.status) { // brand footer: hairline + lockup
+      g.fillStyle = TV.line; g.fillRect(36, 664, 440, 1);
+      if (logo.complete && logo.naturalWidth) g.drawImage(logo, 36, 678, 122, 24);
+    }
   } else if (sc === 'controls') {
-    title('CONTROLS');
-    const rows = [['TRIGGER / GRIP', 'grab / throw a ball'], ['A', 'reset the cans'], ['B  (hold 1 s)', 'quit VR'],
-                  ['X', 'open / close this menu'], ['Y', 'refill the balls'], ['MENU', 'point + trigger on a button']];
+    title('Controls');
+    const rows = [['TRIGGER / GRIP', 'grab / throw a ball'], ['A', 'reset the cans'], ['B (HOLD 1 S)', 'quit VR'],
+                  ['X', 'open / close menu'], ['Y', 'refill the balls'], ['MENU', 'point + trigger']];
     rows.forEach(([k, t], i) => {
-      const y = 112 + i * 64;
-      roundRect(g, 36, y - 22, 190, 44, 10); g.fillStyle = '#2d3340'; g.fill();
-      g.fillStyle = '#ffe9a8'; g.font = 'bold 22px sans-serif'; g.textAlign = 'left'; g.fillText(k, 48, y);
-      g.fillStyle = '#fff'; g.font = '22px sans-serif'; g.fillText(t, 240, y);
+      const y = 112 + i * 62;
+      roundRect(g, 36, y - 22, 214, 44, 4); g.fillStyle = TV.raised; g.fill();
+      g.strokeStyle = TV.line; g.lineWidth = 1; g.stroke();
+      drawText(g, k, 48, y, { font: fnt(500, 15, true), color: TV.orange, ls: 1 });
+      drawText(g, t, 268, y, { font: fnt(400, 19), color: TV.ink });
     });
-    g.fillStyle = '#9fb0c8'; g.font = '22px sans-serif'; g.textAlign = 'center';
-    g.fillText('Hold a controller up to your face to see its labels', PANEL_W / 2, 560);
-    g.fillText('Knock all the cans down for a fast, low-throw score', PANEL_W / 2, 596);
+    wrapText(g, 'Hold a controller up to your face to see its labels.', 36, 520, 440, 26, { font: fnt(300, 18), color: TV.muted });
+    wrapText(g, 'Knock every can down in few throws and little time for a high score.', 36, 580, 440, 26, { font: fnt(300, 18), color: TV.muted });
   } else if (sc === 'board') {
-    title('LEADERBOARD', 36);
-    g.fillStyle = '#fff'; g.font = 'bold 28px sans-serif'; g.textAlign = 'center';
-    g.fillText(`${canCount(panel.viewRows)} cans`, PANEL_W / 2, 108);
+    title('Leaderboard', 36);
+    drawText(g, `${canCount(panel.viewRows)} cans`, PANEL_W / 2, 108, { font: fnt(600, 24), color: TV.heading, align: 'center' });
     const list = topFor(panel.viewRows).slice(0, BOARD_SIZE);
-    g.font = '18px sans-serif'; g.fillStyle = '#9fb0c8';
-    g.textAlign = 'left'; g.fillText('#  NAME', 40, 160); g.textAlign = 'right';
-    g.fillText('SCORE', 270, 160); g.fillText('THROWS', 370, 160); g.fillText('TIME', 470, 160);
-    if (!list.length) { g.fillStyle = '#9fb0c8'; g.font = '24px sans-serif'; g.textAlign = 'center'; g.fillText('No scores yet — be the first!', PANEL_W / 2, 360); }
+    label('# NAME', 40, 158); label('SCORE', 270, 158, { align: 'right' }); label('THROWS', 372, 158, { align: 'right' }); label('TIME', 472, 158, { align: 'right' });
+    g.fillStyle = TV.lineStrong; g.fillRect(36, 174, 440, 1);
+    if (!list.length) wrapText(g, 'No scores yet. Be the first.', PANEL_W / 2 - 150, 360, 300, 28, { font: fnt(300, 22), color: TV.muted });
     list.forEach((e, i) => {
-      const y = 196 + i * 42;
-      g.fillStyle = i === 0 ? '#ffe9a8' : '#fff'; g.font = 'bold 26px sans-serif';
-      g.textAlign = 'left'; g.fillText(`${i + 1}  ${e.name}`, 40, y);
-      g.textAlign = 'right'; g.fillText(String(e.points), 270, y);
-      g.font = '24px sans-serif'; g.fillText(String(e.throws), 370, y); g.fillText(fmtTime(e.time), 470, y);
+      const y = 196 + i * 42, top = i === 0, ink = top ? TV.orange : TV.ink;
+      if (i) { g.fillStyle = TV.line; g.fillRect(36, y - 21, 440, 1); }
+      drawText(g, String(i + 1), 40, y, { font: fnt(500, 18, true), color: top ? TV.orange : TV.muted });
+      drawText(g, e.name, 84, y, { font: fnt(top ? 700 : 500, 22), color: ink });
+      drawText(g, String(e.points), 270, y, { font: fnt(500, 20, true), color: ink, align: 'right' });
+      drawText(g, String(e.throws), 372, y, { font: fnt(400, 19, true), color: TV.ink, align: 'right' });
+      drawText(g, fmtTime(e.time), 472, y, { font: fnt(400, 19, true), color: TV.ink, align: 'right' });
     });
-    g.fillStyle = '#6f7d92'; g.font = '16px sans-serif'; g.textAlign = 'center';
-    g.fillText('score = cans × 50 × (throw efficiency + time efficiency)', PANEL_W / 2, 622);
+    drawText(g, 'SCORE = CANS × 50 × (THROW + TIME EFFICIENCY)', PANEL_W / 2, 622, { font: fnt(400, 12, true), color: TV.muted, align: 'center', ls: 1 });
   } else if (sc === 'result' && panel.result) {
     const res = panel.result;
-    title('YOU WIN!');
-    g.fillStyle = '#fff'; g.font = '26px sans-serif'; g.textAlign = 'center';
-    g.fillText(`${res.n} cans  ·  ${fmtTime(res.time)}  ·  ${res.throws} ${res.throws === 1 ? 'throw' : 'throws'}`, PANEL_W / 2, 100);
-    g.fillStyle = '#ffe9a8'; g.font = 'bold 76px sans-serif'; g.fillText(String(res.points), PANEL_W / 2, 176);
-    g.fillStyle = '#9fb0c8'; g.font = '20px sans-serif';
-    g.fillText(`throws ×${res.throwEff.toFixed(2)}  +  time ×${res.timeEff.toFixed(2)}  (max ×2 each)`, PANEL_W / 2, 226);
-    g.fillStyle = res.rank <= BOARD_SIZE ? '#7dffa0' : '#ff9a8a'; g.font = 'bold 28px sans-serif';
-    g.fillText(res.saved ? 'Saved ✓' : res.rank === 1 ? 'New best score!' : res.rank <= BOARD_SIZE ? `Rank #${res.rank}` : 'Not in the top 10 — try again!', PANEL_W / 2, 272);
+    title('You win');
+    label(`${res.n} CANS · ${fmtTime(res.time)} · ${res.throws} ${res.throws === 1 ? 'THROW' : 'THROWS'}`, PANEL_W / 2, 100, { align: 'center' });
+    drawText(g, String(res.points), PANEL_W / 2, 170, { font: fnt(700, 78), color: TV.orange, align: 'center' }); // the one figure that matters
+    label(`THROWS ×${res.throwEff.toFixed(2)} + TIME ×${res.timeEff.toFixed(2)} (MAX ×2 EACH)`, PANEL_W / 2, 224, { align: 'center', ls: 1 });
+    const verdict = res.saved ? 'Saved to the leaderboard' : res.rank === 1 ? '▲ New best score' : res.rank <= BOARD_SIZE ? `▲ Rank #${res.rank}` : '▼ Not in the top 10. Try again.';
+    drawText(g, verdict, PANEL_W / 2, 268, { font: fnt(600, 22), color: res.saved || res.rank <= BOARD_SIZE ? TV.ink : TV.muted, align: 'center' });
     if (!res.saved && res.rank <= BOARD_SIZE) {
-      g.fillStyle = '#fff'; g.font = '20px sans-serif'; g.fillText('your initials', PANEL_W / 2, 306);
-      panel.name.forEach((ch, i) => { g.fillStyle = '#ffe9a8'; g.font = 'bold 54px sans-serif'; g.fillText(ch, 128 + i * 90 + 35, 398); });
+      label('YOUR INITIALS', PANEL_W / 2, 304, { align: 'center' });
+      panel.name.forEach((ch, i) => {
+        const x = 128 + i * 90;
+        roundRect(g, x, 370, 70, 58, 4); g.strokeStyle = TV.line; g.lineWidth = 2; g.stroke();
+        drawText(g, ch, x + 35, 400, { font: fnt(700, 40), color: TV.heading, align: 'center' });
+      });
     }
   }
   panel.buttons.forEach((b, i) => drawButton(g, b, hands.some(h => h.hover === i) || panel.mouseHover === i));
-  if (panel.status) { g.fillStyle = '#ff8a7a'; g.font = 'bold 24px sans-serif'; g.textAlign = 'center'; g.fillText(panel.status, PANEL_W / 2, 700); }
+  if (panel.status) drawText(g, panel.status, PANEL_W / 2, 696, { font: fnt(500, 19), color: TV.orange, align: 'center' });
   panelTex.needsUpdate = true;
 }
+const logo = new Image(); // three vertex lockup (orange), a file: never retyped in a font
+logo.onload = () => { panel.drawnKey = ''; bump(); };
+logo.src = 'assets/threevertex-lockup-orange.svg';
+onFontsReady(() => { panel.drawnKey = ''; bump(); });
 
 const ray = new THREE.Raycaster();
 const _o = new THREE.Vector3(), _d = new THREE.Vector3(), _q = new THREE.Quaternion();
@@ -1213,11 +1375,10 @@ function burst(x, y, z, color, n) {
 }
 
 const bannerTex = canvasTex(1024, 256, (g, w, h) => {
-  g.font = 'bold 190px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.lineWidth = 16; g.strokeStyle = '#7a1f12'; g.strokeText('YOU WIN!', w / 2, h / 2 + 8);
-  const gr = g.createLinearGradient(0, 40, 0, 220); gr.addColorStop(0, '#fff6a8'); gr.addColorStop(1, '#f1a712');
-  g.fillStyle = gr; g.fillText('YOU WIN!', w / 2, h / 2 + 8);
-});
+  g.font = fnt(700, 180); g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.lineJoin = 'round'; g.lineWidth = 26; g.strokeStyle = TV.navy; g.strokeText('YOU WIN!', w / 2, h / 2 + 8);
+  g.fillStyle = TV.orange; g.fillText('YOU WIN!', w / 2, h / 2 + 8);
+}, null, true);
 const banner = new THREE.Sprite(new THREE.SpriteMaterial({ map: bannerTex, transparent: true, depthTest: false, fog: false }));
 banner.renderOrder = 9; banner.visible = false;
 banner.position.set(0, 1.95, -2.4);
@@ -1319,6 +1480,7 @@ function updateFX(dt) {
 
 // ---------- main loop ----------
 const clock = new THREE.Clock();
+let booted = false;
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.05);
   moveDesktop(dt);
@@ -1341,6 +1503,7 @@ renderer.setAnimationLoop(() => {
   updateScore();
   updateListener();
   renderer.render(scene, camera);
+  if (!booted) { booted = true; document.getElementById('boot').classList.add('done'); }
 });
 
 resetScene();
@@ -1348,7 +1511,7 @@ setQuality(settings.quality);
 if (!settings.tutorialDone) openPanel('controls'); // first run only
 
 // handle for tests / debugging
-window.game = { THREE, scene, camera, rig, renderer, world, cans, balls, slots, hands, score, audio, panel, menuMesh, settings, FX, banner,
+window.game = { boardCanvas, panelCanvas, logo, vrButton, THREE, scene, camera, rig, renderer, world, cans, balls, slots, hands, score, audio, panel, menuMesh, settings, FX, banner,
   play, resetScene, resetCans, spawnBalls, throwBall, grab, release, quitVR, openPanel, closePanel, togglePanel, setRows, setQuality,
   computePoints, addScore, topFor, loadBoard, exportBoard, importBoard, rankFor, celebrate, getSimTime: () => simTime };
 </script>
