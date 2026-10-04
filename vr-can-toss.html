@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>VR Can Toss</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/n5ro/aframe-physics-system@v4.2.2/dist/aframe-physics-system.min.js"></script>
+  <script src="https://unpkg.com/aframe-extras@7.2.0/dist/aframe-extras.min.js"></script>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    #resetBtn {
+      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+      z-index: 999; padding: 12px 24px; font-size: 18px; font-family: sans-serif;
+      background: #222; color: white; border: none; border-radius: 8px; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+<button id="resetBtn" onclick="resetScene()">Reset Cans</button>
+
+<a-scene physics="debug: false; gravity: -9.8" background="color: #87CEEB">
+
+  <a-assets>
+    <img id="skyTexture" src="https://cdn.jsdelivr.net/gh/aframevr/aframe@master/examples/boilerplate/panorama/sechelt.jpg">
+  </a-assets>
+
+  <!-- Ground -->
+  <a-plane position="0 0 -3" rotation="-90 0 0" width="20" height="30"
+    color="#4a7c3f" static-body></a-plane>
+
+  <!-- Back wall marker / table -->
+  <a-box position="0 0.5 -6" width="2" height="1" depth="2" color="#8b5a2b" static-body></a-box>
+
+  <!-- Can Pyramid: 6 bottom, 3 middle, 1 top -->
+  <a-entity id="canTower"></a-entity>
+
+  <!-- Throwing line marker -->
+  <a-ring position="0 0.01 -1" rotation="-90 0 0" radius-inner="0.4" radius-outer="0.5" color="white"></a-ring>
+
+  <!-- Ball spawner: a tray of grabbable balls near the player -->
+  <a-entity id="ballTray" position="0.4 1 -0.8"></a-entity>
+
+  <!-- Sky -->
+  <a-sky src="#skyTexture" rotation="0 -130 0"></a-sky>
+
+  <!-- Camera rig with hand controls -->
+  <a-entity id="rig" position="0 0 0" movement-controls="speed: 0.1">
+    <a-entity camera position="0 1.6 0" look-controls wasd-controls></a-entity>
+    <a-entity id="leftHand" hand-controls="hand: left" laser-controls="hand: left"
+      super-hands
+      physics-collider
+      sphere-collider="objects: .grabbable"></a-entity>
+    <a-entity id="rightHand" hand-controls="hand: right" laser-controls="hand: right"
+      super-hands
+      physics-collider
+      sphere-collider="objects: .grabbable"></a-entity>
+  </a-entity>
+
+</a-scene>
+
+<script>
+  // Can tower builder
+  function buildTower() {
+    const tower = document.getElementById('canTower');
+    tower.innerHTML = '';
+    const canRadius = 0.15;
+    const canHeight = 0.3;
+    const rows = [
+      { count: 6, y: canHeight/2 },
+      { count: 3, y: canHeight*1.5 },
+      { count: 1, y: canHeight*2.5 }
+    ];
+    let idCounter = 0;
+    rows.forEach(row => {
+      const spacing = canRadius * 2.2;
+      const totalWidth = (row.count - 1) * spacing;
+      for (let i = 0; i < row.count; i++) {
+        const x = -totalWidth/2 + i * spacing;
+        const can = document.createElement('a-cylinder');
+        can.setAttribute('radius', canRadius);
+        can.setAttribute('height', canHeight);
+        can.setAttribute('color', idCounter % 2 === 0 ? '#c0392b' : '#bdc3c7');
+        can.setAttribute('position', `${x} ${row.y} -4`);
+        can.setAttribute('dynamic-body', 'mass: 0.3; linearDamping: 0.3; angularDamping: 0.3');
+        can.setAttribute('shadow', '');
+        tower.appendChild(can);
+        idCounter++;
+      }
+    });
+  }
+
+  // Ball spawner ? keeps 4 balls available to grab
+  function spawnBalls() {
+    const tray = document.getElementById('ballTray');
+    tray.innerHTML = '';
+    for (let i = 0; i < 4; i++) {
+      const ball = document.createElement('a-sphere');
+      ball.setAttribute('radius', 0.1);
+      ball.setAttribute('color', '#f1c34e');
+      ball.setAttribute('position', `${i * 0.25 - 0.375} 0 0`);
+      ball.setAttribute('dynamic-body', 'mass: 0.5; linearDamping: 0.1');
+      ball.setAttribute('class', 'grabbable');
+      ball.setAttribute('grabbable', '');
+      ball.setAttribute('stretchable', '');
+      ball.setAttribute('draggable', '');
+      ball.setAttribute('shadow', '');
+      tray.appendChild(ball);
+    }
+  }
+
+  function resetScene() {
+    buildTower();
+    spawnBalls();
+  }
+
+  document.querySelector('a-scene').addEventListener('loaded', () => {
+    resetScene();
+  });
+</script>
+
+</body>
+</html>
