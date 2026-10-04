@@ -213,3 +213,77 @@ test('Reset button rebuilds cans and balls', async () => {
   assert.ok(cans.every(p => Math.abs(p[0]) < 0.7 && p[1] > 0.9), 'cans not back on the table');
   await page.close();
 });
+
+const soundTypes = page => page.evaluate(() => window.game.audio.log.map(s => s.type));
+
+test('sound: throwing whooshes and impacts clink/thud (unlocked by the click)', async () => {
+  const { page, errors } = await openPage();
+  await settle(page);
+  await page.evaluate(() => { window.game.camera.rotation.x = -0.05; });
+  for (let i = 0; i < 3; i++) { await page.mouse.click(400, 300); await page.waitForTimeout(400); }
+  await settle(page, 3000);
+  const types = await soundTypes(page);
+  assert.ok(types.includes('whoosh'), 'no whoosh on throw');
+  assert.ok(types.some(t => ['hit', 'tin', 'thud', 'canfloor'].includes(t)), `no impact sounds: ${types}`);
+  const ctxState = await page.evaluate(() => window.game.audio.ctx && window.game.audio.ctx.state);
+  assert.strictEqual(ctxState, 'running', 'AudioContext not unlocked by the user gesture');
+  assert.deepStrictEqual(errors, []);
+  await page.close();
+});
+
+test('sound: grabbing a ball clicks', async () => {
+  const { page } = await openPage();
+  await settle(page, 1000);
+  await page.evaluate(() => {
+    const { hands, balls } = window.game;
+    hands[0].ctrl.matrixAutoUpdate = true;
+    hands[0].ctrl.position.copy(balls[0].mesh.position);
+    hands[0].ctrl.dispatchEvent({ type: 'selectstart' });
+  });
+  assert.ok((await soundTypes(page)).includes('grab'));
+  await page.close();
+});
+
+test('throw assist: a gentle 1.5 m/s hand motion still launches the ball >= 2.2 m/s', async () => {
+  const { page } = await openPage();
+  await settle(page);
+  const vz = await page.evaluate(async () => {
+    const { hands, balls } = window.game;
+    const hand = hands[1], ball = balls[0];
+    hand.ctrl.matrixAutoUpdate = true;
+    const frame = () => new Promise(r => requestAnimationFrame(r));
+    hand.ctrl.position.copy(ball.mesh.position);
+    await frame();
+    hand.ctrl.dispatchEvent({ type: 'selectstart' });
+    let last = performance.now();
+    for (let i = 0; i < 10; i++) {
+      await frame();
+      const now = performance.now();
+      hand.ctrl.position.z -= 1.5 * (now - last) / 1000;
+      last = now;
+    }
+    hand.ctrl.dispatchEvent({ type: 'selectend' });
+    return ball.body.velocity.z;
+  });
+  assert.ok(vz < -2.2, `assist too weak, vz=${vz}`);
+  assert.ok(vz > -18.5, `throw speed not capped, vz=${vz}`);
+  await page.close();
+});
+
+test('scoreboard counts fallen cans, announces a win, and resets', async () => {
+  const { page } = await openPage();
+  await settle(page, 1500);
+  let s = await page.evaluate(() => {
+    window.game.cans.slice(0, 3).forEach(c => c.body.position.set(2, 0.3, -2));
+    return null;
+  });
+  await page.waitForTimeout(500);
+  assert.strictEqual(await page.evaluate(() => window.game.score.down), 3);
+  await page.evaluate(() => window.game.cans.forEach(c => c.body.position.set(2, 0.3, -2)));
+  await page.waitForTimeout(500);
+  assert.strictEqual(await page.evaluate(() => window.game.score.won), true);
+  assert.ok((await soundTypes(page)).includes('win'));
+  await page.click('#resetBtn');
+  assert.deepStrictEqual(await page.evaluate(() => [window.game.score.down, window.game.score.won]), [0, false]);
+  await page.close();
+});
