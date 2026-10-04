@@ -3,60 +3,10 @@
 <head>
   <title>VR Can Toss</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://aframe.io/releases/1.0.4/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/aframe-physics-system@4.0.1/dist/aframe-physics-system.min.js"></script>
-  <style>
-    body { margin: 0; overflow: hidden; }
-    #resetBtn {
-      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-      z-index: 999; padding: 12px 24px; font-size: 18px; font-family: sans-serif;
-      background: #222; color: white; border: none; border-radius: 8px; cursor: pointer;
-    }
-  </style>
-</head>
-<body>
-<button id="resetBtn" onclick="resetScene()">Reset Cans</button>
-
-<a-scene physics="debug: false; gravity: -9.8" background="color: #87CEEB" webxr="optionalFeatures: local-floor">
-
-  <!-- Explicit lights so objects are lit in VR too -->
-  <a-entity light="type: ambient; color: #fff; intensity: 0.7"></a-entity>
-  <a-entity light="type: directional; color: #fff; intensity: 0.8" position="-1 4 2"></a-entity>
-
-  <!-- Ground -->
-  <a-plane position="0 0 -3" rotation="-90 0 0" width="20" height="30"
-    color="#4a7c3f" static-body></a-plane>
-
-  <!-- Target table (top surface at y = 0.8) -->
-  <a-box id="table" position="0 0.4 -4" width="2.2" height="0.8" depth="0.9"
-    color="#8b5a2b" static-body></a-box>
-
-  <!-- Cans (built by script, resting on the table) -->
-  <a-entity id="canTower"></a-entity>
-
-  <!-- Throwing line marker -->
-  <a-ring position="0 0.01 -1" rotation="-90 0 0" radius-inner="0.4" radius-outer="0.5" color="white"></a-ring>
-
-  <!-- Pedestal holding the balls (top at y = 0.9) -->
-  <a-cylinder position="0 0.45 -0.8" radius="0.4" height="0.9" color="#555" static-body></a-cylinder>
-  <a-entity id="balls"></a-entity>
-
-  <a-sky color="#87CEEB" radius="150"></a-sky>
-
-  <!-- Camera rig with hand controls -->
-  <a-entity id="rig" position="0 0 0">
-    <a-entity camera="far: 200" position="0 1.6 0" look-controls wasd-controls></a-entity>
-    <a-entity id="leftHand" hand-controls="hand: left" hand-grabber></a-entity>
-    <a-entity id="rightHand" hand-controls="hand: right" hand-grabber></a-entity>
-  </a-entity>
-
-</a-scene>
-
-<script>
-  const BALL_RADIUS = 0.1;
+  <script>
   const GRAB_RANGE = 0.3;
-  const TABLE_TOP = 0.8;
-  const PEDESTAL_TOP = 0.9;
 
   // Grab with trigger or grip: nearest ball within reach follows the hand,
   // and is released with the hand's velocity so it can be thrown.
@@ -111,13 +61,70 @@
       }
     }
   });
+  </script>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    #resetBtn {
+      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+      z-index: 999; padding: 12px 24px; font-size: 18px; font-family: sans-serif;
+      background: #222; color: white; border: none; border-radius: 8px; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+<button id="resetBtn" onclick="resetScene()">Reset Cans</button>
+
+<a-scene physics="debug: false; gravity: -9.8; friction: 0.6; restitution: 0.05; iterations: 20; maxInterval: 0.0167" background="color: #87CEEB" webxr="optionalFeatures: local-floor">
+
+  <!-- Explicit lights so objects are lit in VR too -->
+  <a-entity light="type: ambient; color: #fff; intensity: 0.7"></a-entity>
+  <a-entity light="type: directional; color: #fff; intensity: 0.8" position="-1 4 2"></a-entity>
+
+  <!-- Ground -->
+  <a-box position="0 -0.05 -3" width="20" height="0.1" depth="30"
+    color="#4a7c3f" static-body></a-box>
+
+  <!-- Target table (top surface at y = 0.8) -->
+  <a-box id="table" position="0 0.4 -4" width="2.2" height="0.8" depth="0.9"
+    color="#8b5a2b" static-body></a-box>
+
+  <!-- Cans (built by script, resting on the table) -->
+  <a-entity id="canTower"></a-entity>
+
+  <!-- Throwing line marker -->
+  <a-ring position="0 0.01 -1" rotation="-90 0 0" radius-inner="0.4" radius-outer="0.5" color="white"></a-ring>
+
+  <!-- Pedestal holding the balls (top at y = 0.9) -->
+  <a-cylinder position="0 0.45 -0.8" radius="0.4" height="0.9" color="#555"
+    static-body="shape: none" shape="shape: cylinder; radiusTop: 0.4; radiusBottom: 0.4; height: 0.9"></a-cylinder>
+  <a-entity id="balls"></a-entity>
+
+  <a-sky color="#87CEEB" radius="150"></a-sky>
+
+  <!-- Camera rig with hand controls -->
+  <a-entity id="rig" position="0 0 0">
+    <a-entity camera="far: 200" position="0 1.6 0" look-controls wasd-controls></a-entity>
+    <a-entity id="leftHand" hand-controls="hand: left" hand-grabber></a-entity>
+    <a-entity id="rightHand" hand-controls="hand: right" hand-grabber></a-entity>
+  </a-entity>
+
+</a-scene>
+
+<script>
+  const BALL_RADIUS = 0.1;
+  const TABLE_TOP = 0.8;
+  const PEDESTAL_TOP = 0.9;
 
   function makeBall(x, y, z) {
     const ball = document.createElement('a-sphere');
     ball.setAttribute('radius', BALL_RADIUS);
     ball.setAttribute('color', '#f1c34e');
     ball.setAttribute('position', `${x} ${y} ${z}`);
-    ball.setAttribute('dynamic-body', 'mass: 0.3; shape: sphere; linearDamping: 0.05; angularDamping: 0.2');
+    // Explicit shapes: the physics system's auto-shape code uses THREE.Geometry, which
+    // A-Frame >= 1.2 (three.js r125+) no longer has;
+    // aframe-physics-system 4.0.1 only works with A-Frame 1.0.x.
+    ball.setAttribute('dynamic-body', 'mass: 0.3; shape: none; linearDamping: 0.05; angularDamping: 0.2');
+    ball.setAttribute('shape', `shape: sphere; radius: ${BALL_RADIUS}`);
     ball.classList.add('grabbable');
     document.getElementById('balls').appendChild(ball);
     return ball;
@@ -134,8 +141,8 @@
   function buildTower() {
     const tower = document.getElementById('canTower');
     tower.innerHTML = '';
-    const r = 0.15, h = 0.3, gap = 0.01;
-    const s = r * 2 + 0.02; // centre spacing within a row
+    const r = 0.15, h = 0.3, gap = 0.002;
+    const s = r * 2 + 0.03; // centre spacing within a row
     let id = 0;
     const add = (x, y, z) => {
       const can = document.createElement('a-cylinder');
@@ -143,7 +150,11 @@
       can.setAttribute('height', h);
       can.setAttribute('color', id++ % 2 === 0 ? '#c0392b' : '#bdc3c7');
       can.setAttribute('position', `${x} ${y} ${z}`);
-      can.setAttribute('dynamic-body', 'mass: 0.3; shape: cylinder; linearDamping: 0.2; angularDamping: 0.2');
+      can.setAttribute('dynamic-body', 'mass: 0.3; shape: none; linearDamping: 0.1; angularDamping: 0.3');
+      // Box collider (slightly inside the visual cylinder): cannon's cylinder-cylinder
+      // contacts jitter, which makes stacked cans creep and topple on their own.
+      const he = r * 0.97;
+      can.setAttribute('shape', `shape: box; halfExtents: ${he} ${h / 2} ${he}`);
       tower.appendChild(can);
     };
     const y0 = TABLE_TOP + h / 2 + gap;
