@@ -12,10 +12,16 @@
       padding: 12px 24px; font-size: 18px; font-family: sans-serif;
       background: #222; color: white; border: none; border-radius: 8px; cursor: pointer;
     }
-    #help {
-      position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%); z-index: 999;
-      color: #fff; font: 14px sans-serif; text-shadow: 0 1px 3px #000; text-align: center; pointer-events: none;
+    #helpBtn {
+      position: fixed; right: 16px; bottom: 16px; z-index: 999; width: 40px; height: 40px; border-radius: 50%;
+      background: rgba(20,20,26,0.75); color: #fff; border: 1px solid rgba(255,255,255,0.4);
+      font: bold 20px sans-serif; cursor: pointer;
     }
+    #help {
+      display: none; position: fixed; right: 16px; bottom: 64px; z-index: 999; max-width: 300px;
+      background: rgba(20,20,26,0.88); color: #fff; font: 14px/1.5 sans-serif; padding: 12px 14px; border-radius: 10px;
+    }
+    #help.open { display: block; }
   </style>
   <script type="importmap">
   {
@@ -28,9 +34,10 @@
   </script>
 </head>
 <body>
-<div id="bar"><button id="resetBtn">Reset Cans</button><button id="refillBtn">Refill Balls</button></div>
-<div id="help">VR: trigger/grip near a ball to pick it up, release to throw &middot; A reset cans &middot; B (hold) quit VR &middot; X hints &middot; Y refill balls<br>
-Desktop: click to throw, drag to look, WASD to move, R reset cans.</div>
+<div id="bar"><button id="resetBtn">Reset Cans</button><button id="refillBtn">Refill Balls</button><button id="menuBtn">Menu</button></div>
+<button id="helpBtn" title="Controls">?</button>
+<div id="help"><b>Desktop</b><br>Click: throw &middot; Drag: look &middot; WASD: move<br>R: reset cans &middot; M: menu<br>
+<b>VR</b><br>Trigger/Grip: grab &amp; throw &middot; A: reset cans<br>X: menu &middot; Y: refill balls &middot; B (hold): quit</div>
 
 <script type="module">
 import * as THREE from 'three';
@@ -49,6 +56,76 @@ const CAN_R = 0.033, CAN_H = 0.122; // 6.6 cm x 12.2 cm
 const CAN_MASS = 0.1;               // weighted a little so a softball moves them like a carnival can
 const THROW_ASSIST = 1.6;           // release speed multiplier: a relaxed flick carries a full throw
 const MAX_THROW_SPEED = 18;         // m/s
+
+// ---------- settings + local leaderboard (localStorage; falls back to memory if storage is blocked) ----------
+const mem = {};
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return k in mem ? mem[k] : d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { mem[k] = v; } },
+};
+const SETTINGS_KEY = 'cantoss.settings', BOARD_KEY = 'cantoss.leaderboard.v1';
+const MIN_ROWS = 3, MAX_ROWS = 6, BOARD_SIZE = 10;
+const settings = Object.assign({ rows: 4, quality: 'high', tutorialDone: false, name: 'AAA' }, store.get(SETTINGS_KEY, {}));
+settings.rows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, Math.round(+settings.rows) || 4));
+if (settings.quality !== 'low') settings.quality = 'high';
+settings.name = String(settings.name || 'AAA').toUpperCase().replace(/[^A-Z]/g, '').padEnd(3, 'A').slice(0, 3);
+const saveSettings = () => store.set(SETTINGS_KEY, settings);
+const canCount = (rows) => rows * (rows + 1) / 2;
+
+// Score = cans x 50 x (throw efficiency + time efficiency), each efficiency capped at 2.
+// Par is 0.8 throws per can and 6 s per can, so a par run scores cans x 100.
+function computePoints(n, throws, time) {
+  const parThrows = Math.ceil(n * 0.8), parTime = n * 6;
+  const throwEff = Math.min(2, parThrows / Math.max(1, throws));
+  const timeEff = Math.min(2, parTime / Math.max(1, time));
+  return { points: Math.round(n * 50 * (throwEff + timeEff)), throwEff, timeEff, parThrows, parTime };
+}
+
+function sanitizeEntry(e) { // also used for imported files, so be strict
+  if (!e || typeof e !== 'object') return null;
+  const rows = Math.round(+e.rows), points = Math.round(+e.points), throws = Math.round(+e.throws), time = +e.time;
+  if (!(rows >= MIN_ROWS && rows <= MAX_ROWS) || !(points >= 0 && points < 1e6)
+      || !(throws >= 1 && throws < 1e4) || !(time >= 0 && time < 1e5)) return null;
+  const name = String(e.name ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3) || '???';
+  return { name, rows, cans: canCount(rows), points, throws, time: Math.round(time * 10) / 10,
+           date: typeof e.date === 'string' ? e.date.replace(/[^0-9-]/g, '').slice(0, 10) : '' };
+}
+const better = (a, b) => b.points - a.points || a.time - b.time;
+function trimBoard(list) {
+  const out = [];
+  for (let rows = MIN_ROWS; rows <= MAX_ROWS; rows++) out.push(...list.filter(e => e.rows === rows).sort(better).slice(0, BOARD_SIZE));
+  return out;
+}
+function loadBoard() { const raw = store.get(BOARD_KEY, []); return (Array.isArray(raw) ? raw : []).map(sanitizeEntry).filter(Boolean); }
+const topFor = (rows) => loadBoard().filter(e => e.rows === rows).sort(better);
+function rankFor(rows, points, time) { // 1 = best; > BOARD_SIZE means it would not make the board
+  return 1 + topFor(rows).filter(e => better({ points, time }, e) > 0).length;
+}
+function addScore(entry) {
+  const e = sanitizeEntry({ ...entry, date: new Date().toISOString().slice(0, 10) });
+  if (!e) return null;
+  store.set(BOARD_KEY, trimBoard([...loadBoard(), e]));
+  return e;
+}
+const exportBoard = () => JSON.stringify({ version: 1, entries: loadBoard() }, null, 2);
+function importBoard(text) {
+  let data;
+  try { data = JSON.parse(text); } catch { return { added: 0, rejected: 0, error: 'Not valid JSON' }; }
+  const list = Array.isArray(data) ? data : data && Array.isArray(data.entries) ? data.entries : null;
+  if (!list) return { added: 0, rejected: 0, error: 'No entries found' };
+  const key = (e) => [e.name, e.rows, e.points, e.throws, e.time, e.date].join('|');
+  const have = loadBoard(), seen = new Set(have.map(key));
+  let added = 0, rejected = 0;
+  for (const raw of list.slice(0, 500)) {
+    const e = sanitizeEntry(raw);
+    if (!e) { rejected++; continue; }
+    if (seen.has(key(e))) continue;
+    seen.add(key(e)); have.push(e); added++;
+  }
+  store.set(BOARD_KEY, trimBoard(have));
+  return { added, rejected };
+}
+const fmtTime = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 
 // ---------- renderer / scene / camera ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -233,7 +310,10 @@ function ensureAudio() {
 }
 function unlockAudio() { const c = ensureAudio(); if (c && c.state !== 'running') c.resume().catch(() => {}); }
 for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.addEventListener(ev, unlockAudio);
-renderer.xr.addEventListener('sessionstart', unlockAudio);
+renderer.xr.addEventListener('sessionstart', () => {
+  unlockAudio();
+  setTimeout(() => { if (panel.open) placePanel(); }, 800); // re-place the first-run card once the headset pose is known
+});
 
 function tone(out, freq, t0, dur, gain, type = 'sine') {
   const ctx = audio.ctx, o = ctx.createOscillator(), g = ctx.createGain();
@@ -279,6 +359,28 @@ const SOUNDS = {
   whoosh(out, t, v) { noiseBurst(out, t, 0.35, 0.5 * v, 350, 1.5, 'bandpass', 1800); },
   grab(out, t, v) { tone(out, 520, t, 0.05, 0.15, 'triangle'); noiseBurst(out, t, 0.03, 0.1, 2000); },
   click(out, t, v) { tone(out, 880, t, 0.04, 0.12, 'triangle'); },
+  pop(out, t, v) { // confetti cannon
+    noiseBurst(out, t, 0.09, 0.8 * v, 1800, 0.6);
+    tone(out, 140, t, 0.12, 0.6 * v);
+  },
+  boom(out, t, v) { // firework burst + crackle
+    noiseBurst(out, t, 0.8, 0.9 * v, 900, 0.5, 'lowpass', 90);
+    tone(out, 60, t, 0.5, 0.7 * v);
+    for (let i = 0; i < 14; i++) noiseBurst(out, t + 0.15 + Math.random() * 0.9, 0.025, 0.25 * v, 5000 + Math.random() * 3000, 0.8, 'highpass');
+  },
+  cheer(out, t, v) { // crowd: swelling, wobbling band of noise
+    const ctx = audio.ctx, src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+    const lfo = ctx.createOscillator(), lg = ctx.createGain();
+    src.buffer = audio.noise; src.loop = true;
+    f.type = 'bandpass'; f.frequency.setValueAtTime(900, t); f.frequency.linearRampToValueAtTime(1500, t + 1.2); f.Q.value = 0.6;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.32 * v, t + 0.5);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 2.8);
+    lfo.frequency.value = 6.5; lg.gain.value = 0.07 * v;
+    lfo.connect(lg).connect(g.gain);
+    src.connect(f).connect(g).connect(out);
+    src.start(t); src.stop(t + 2.9); lfo.start(t); lfo.stop(t + 2.9);
+  },
   win(out, t) { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(out, f, t + i * 0.11, 0.5, 0.22, 'triangle')); },
 };
 const _lp = new THREE.Vector3();
@@ -399,11 +501,12 @@ const boardCanvas = document.createElement('canvas');
 boardCanvas.width = 512; boardCanvas.height = 160;
 const boardTex = new THREE.CanvasTexture(boardCanvas);
 boardTex.colorSpace = THREE.SRGBColorSpace;
-plane(1.1, 0.34, new THREE.MeshBasicMaterial({ map: boardTex }), 0, 1.85, -5.17);
-const score = { down: 0, throws: 0, won: false };
+plane(1.1, 0.34, new THREE.MeshBasicMaterial({ map: boardTex }), 0, 2.03, -5.17);
+const score = { down: 0, throws: 0, won: false, t0: null, time: 0 };
+const elapsed = () => score.won ? score.time : score.t0 === null ? 0 : (performance.now() - score.t0) / 1000;
 let lastScoreKey = '';
 function drawBoard() {
-  const key = `${score.down}/${score.throws}/${score.won}`;
+  const key = `${score.down}/${cans.length}/${score.throws}/${score.won}/${Math.floor(elapsed())}`;
   if (key === lastScoreKey) return;
   lastScoreKey = key;
   const g = boardCanvas.getContext('2d');
@@ -411,10 +514,15 @@ function drawBoard() {
   g.strokeStyle = '#ffe9a8'; g.lineWidth = 6; g.strokeRect(6, 6, 500, 148);
   g.fillStyle = '#ffe9a8'; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.font = 'bold 54px sans-serif';
-  g.fillText(score.won ? 'YOU WIN!' : `CANS DOWN ${score.down}/10`, 256, 62);
+  g.fillText(score.won ? 'YOU WIN!' : `CANS DOWN ${score.down}/${cans.length}`, 256, 56);
   g.font = '34px sans-serif';
-  g.fillText(`THROWS: ${score.throws}`, 256, 118);
+  g.fillText(`TIME ${fmtTime(elapsed())}    THROWS ${score.throws}`, 256, 116);
   boardTex.needsUpdate = true;
+}
+function registerThrow() { // called for every real throw (VR release or desktop click)
+  score.throws++;
+  if (score.t0 === null && !score.won) score.t0 = performance.now();
+  if (!settings.tutorialDone) { settings.tutorialDone = true; saveSettings(); if (panel.open && panel.screen === 'controls') closePanel(); }
 }
 
 // throwing line marker
@@ -519,14 +627,14 @@ function updateRefills() {
   if (loose.length > MAX_LOOSE_BALLS) removeItem(loose[0], balls);
 }
 
-// Triangle pyramid of 10 cans (4-3-2-1): every can sits centred on the two below it.
+// Triangle pyramid with settings.rows rows (3..6 => 6, 10, 15 or 21 cans): every can sits centred on the two below it.
 function buildTower() {
   while (cans.length) removeItem(cans[0], cans);
-  const s = CAN_R * 2 + 0.006, gap = 0.001;
+  const rows = settings.rows, s = CAN_R * 2 + 0.006, gap = 0.001;
   const y0 = TABLE_TOP + CAN_H / 2 + gap;
   let id = 0;
-  for (let row = 0; row < 4; row++) {
-    const n = 4 - row;
+  for (let row = 0; row < rows; row++) {
+    const n = rows - row;
     for (let i = 0; i < n; i++) {
       const c = makeCan((i - (n - 1) / 2) * s, y0 + row * (CAN_H + gap), -4, id++);
       c.body.sleep(); // stays perfectly still until something hits it
@@ -543,13 +651,24 @@ function spawnBalls() {
 
 function resetCans() { // the pyramid only: balls are left alone
   buildTower();
-  score.down = 0; score.throws = 0; score.won = false;
+  Object.assign(score, { down: 0, throws: 0, won: false, t0: null, time: 0 });
+  winPanelAt = null;
+  if (panel.open && panel.screen === 'result') closePanel();
   drawBoard();
 }
 function resetScene() { resetCans(); spawnBalls(); }
+function setRows(n) {
+  settings.rows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, n));
+  panel.viewRows = settings.rows;
+  saveSettings();
+  resetCans();
+  bump();
+}
 document.getElementById('resetBtn').addEventListener('click', resetCans);
 document.getElementById('refillBtn').addEventListener('click', spawnBalls);
+document.getElementById('helpBtn').addEventListener('click', () => document.getElementById('help').classList.toggle('open'));
 
+let winPanelAt = null;
 function updateScore() {
   let down = 0;
   for (const c of cans) {
@@ -558,17 +677,25 @@ function updateScore() {
     if (c.body.position.y < TABLE_TOP - 0.03 || upY < 0.5) down++;
   }
   score.down = down;
-  if (down === cans.length && cans.length > 0 && !score.won) {
-    score.won = true;
-    play('win', null, 1);
-  }
+  if (down === cans.length && cans.length > 0 && !score.won) onWin();
+  drawBoard();
+}
+
+function onWin() {
+  score.time = score.t0 === null ? 0 : (performance.now() - score.t0) / 1000;
+  score.won = true;
+  const throws = Math.max(1, score.throws), time = Math.max(1, score.time);
+  const res = computePoints(cans.length, throws, time);
+  panel.result = { ...res, n: cans.length, rows: settings.rows, throws, time: score.time,
+                   rank: rankFor(settings.rows, res.points, score.time), saved: false };
+  celebrate();
+  winPanelAt = simTime + 3.2; // let the celebration play before the result card appears
   drawBoard();
 }
 
 // ---------- VR hands: grab with trigger or grip, throw on release ----------
-const tmp = new THREE.Vector3();
+const tmp = new THREE.Vector3(), _v = new THREE.Vector3(), camPos = new THREE.Vector3(), camDir = new THREE.Vector3();
 const controllerModels = new XRControllerModelFactory();
-const guide = { show: true, until: 25, touched: false }; // controller hints: shown for the first 25 s, X toggles
 
 function tipTexture(lines) {
   const w = 420, h = 40 + lines.length * 44;
@@ -588,7 +715,7 @@ function tipTexture(lines) {
 }
 const TIPS = {
   right: [['TRIGGER', 'grab / throw'], ['GRIP', 'grab / throw'], ['A', 'reset cans'], ['B (hold)', 'quit VR']],
-  left:  [['TRIGGER', 'grab / throw'], ['GRIP', 'grab / throw'], ['X', 'show / hide hints'], ['Y', 'refill balls']],
+  left:  [['TRIGGER', 'grab / throw'], ['GRIP', 'grab / throw'], ['X', 'menu'], ['Y', 'refill balls']],
 };
 
 for (let i = 0; i < 2; i++) {
@@ -619,7 +746,8 @@ for (let i = 0; i < 2; i++) {
     hand.connectedAt = simTime;
     if (hand.tip) { ctrl.remove(hand.tip); hand.tip.material.map.dispose(); }
     const { tex, aspect } = tipTexture(TIPS[hand.handedness] || TIPS.right);
-    hand.tip = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+    hand.tip = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 }));
+    hand.tip.visible = false; // fades in only when you hold the controller up and look at it
     hand.tip.scale.set(0.2 * aspect, 0.2, 1);
     hand.tip.position.set(0, 0.17, 0.03); // floats above the controller, clear of its buttons
     ctrl.add(hand.tip);
@@ -627,7 +755,7 @@ for (let i = 0; i < 2; i++) {
   for (const [down, up] of [['selectstart', 'selectend'], ['squeezestart', 'squeezeend']]) {
     ctrl.addEventListener(down, () => {
       unlockAudio();
-      if (down === 'selectstart' && hand.hover >= 0) { activateMenu(hand.hover); return; } // pressing a menu button
+      if (down === 'selectstart' && hand.hover >= 0) { activatePanel(hand.hover); return; } // pressing a menu button
       grab(hand);
     });
     ctrl.addEventListener(up, () => release(hand));
@@ -648,6 +776,8 @@ function grab(hand) {
     hand.held = best; best.heldBy = hand;
     freeSlotOf(best); // a new ball appears on the stand in its place
     play('grab', best.mesh.position, 0.6);
+    haptic(hand, 0.3, 40);
+    if (panel.open && panel.screen !== 'result') closePanel(); // getting on with the game dismisses the menu
   }
 }
 
@@ -672,14 +802,14 @@ function release(hand) {
   b.body.velocity.set(v.x, v.y, v.z);
   b.body.wakeUp();
   if (v.length() > 1.5) {
-    score.throws++;
+    registerThrow();
     play('whoosh', b.mesh.position, v.length() / 12);
   }
 }
 
 function updateHands(dt) {
   simTime += dt;
-  if (!guide.touched && simTime > guide.until) guide.show = false;
+  camera.getWorldPosition(camPos); camera.getWorldDirection(camDir);
   for (const h of hands) {
     h.ctrl.getWorldPosition(tmp);
     h.hist.push({ t: simTime, p: tmp.clone() });
@@ -690,83 +820,233 @@ function updateHands(dt) {
       h.held.body.velocity.set(0, 0, 0);
       h.held.body.angularVelocity.set(0, 0, 0);
     }
-    if (h.tip) h.tip.visible = guide.show;
+    if (h.tip) { // hint card: only while the controller is held close in front of your face
+      _v.copy(tmp).sub(camPos);
+      const dist = _v.length(), looking = dist < 0.5 && _v.normalize().dot(camDir) > 0.9 && !h.held;
+      const m = h.tip.material;
+      m.opacity += ((looking ? 0.95 : 0) - m.opacity) * Math.min(1, dt * 8);
+      h.tip.visible = m.opacity > 0.03;
+    }
     h.marker.visible = h.connectedAt !== null && !h.model.motionController && simTime - h.connectedAt > 5;
   }
 }
 
-// ---------- in-world menu + controls guide (point a controller at a button and pull the trigger) ----------
-const MENU_W = 512, MENU_H = 720;
-const menuCanvas = document.createElement('canvas');
-menuCanvas.width = MENU_W; menuCanvas.height = MENU_H;
-const menuTex = new THREE.CanvasTexture(menuCanvas);
-menuTex.colorSpace = THREE.SRGBColorSpace;
-menuTex.anisotropy = 4;
+// ---------- haptics ----------
+function haptic(hand, intensity = 0.5, ms = 80) { // hand = a hand object, or null for both
+  const session = renderer.xr.getSession();
+  if (!session) return;
+  for (const src of session.inputSources) {
+    if (hand && src.handedness !== hand.handedness) continue;
+    try {
+      const gp = src.gamepad, act = gp && gp.hapticActuators && gp.hapticActuators[0];
+      if (act && act.pulse) act.pulse(intensity, ms);
+      else if (gp && gp.vibrationActuator) gp.vibrationActuator.playEffect('dual-rumble', { duration: ms, strongMagnitude: intensity, weakMagnitude: intensity });
+    } catch { /* haptics are optional */ }
+  }
+}
+
+// ---------- menu panel: hidden by default, appears in front of you when summoned ----------
+// Point a controller at a button and pull the trigger (or click it with the mouse on desktop).
+const PANEL_W = 512, PANEL_H = 720;
+const panelCanvas = document.createElement('canvas');
+panelCanvas.width = PANEL_W; panelCanvas.height = PANEL_H;
+const panelTex = new THREE.CanvasTexture(panelCanvas);
+panelTex.colorSpace = THREE.SRGBColorSpace;
+panelTex.anisotropy = 4;
 const menuMesh = new THREE.Mesh(
-  new THREE.PlaneGeometry(0.5, 0.5 * MENU_H / MENU_W),
-  new THREE.MeshBasicMaterial({ map: menuTex, transparent: true }));
-menuMesh.position.set(-0.95, 1.3, -0.6);
-menuMesh.rotation.y = 1.0; // turned toward the player
+  new THREE.PlaneGeometry(0.5, 0.5 * PANEL_H / PANEL_W),
+  new THREE.MeshBasicMaterial({ map: panelTex, transparent: true, depthTest: false }));
+menuMesh.renderOrder = 10;
+menuMesh.visible = false;
 scene.add(menuMesh);
+
+const panel = { open: false, screen: 'main', rev: 0, drawnKey: '', buttons: [], status: '', mouseHover: -1,
+                viewRows: settings.rows, result: null, name: settings.name.split('') };
+const bump = () => { panel.rev++; panel.buttons = screenButtons(); }; // buttons are rebuilt right away, not on the next frame
+
+function placePanel() { // about 1 m in front of where you are looking, turned toward you
+  const p = camera.getWorldPosition(new THREE.Vector3()), d = camera.getWorldDirection(new THREE.Vector3());
+  d.y = 0;
+  if (d.lengthSq() < 1e-4) d.set(0, 0, -1);
+  d.normalize();
+  menuMesh.position.set(p.x + d.x * 1.0, p.y - 0.05, p.z + d.z * 1.0);
+  menuMesh.rotation.set(0, Math.atan2(-d.x, -d.z), 0);
+  menuMesh.updateMatrixWorld(true);
+}
+function openPanel(screen = 'main') {
+  panel.screen = screen; panel.open = true; menuMesh.visible = true;
+  placePanel(); bump(); play('click', null, 0.7);
+}
+function closePanel() { panel.open = false; menuMesh.visible = false; panel.mouseHover = -1; for (const h of hands) { h.hover = -1; h.laser.visible = false; } bump(); }
+const togglePanel = () => (panel.open ? closePanel() : openPanel('main'));
+const showScreen = (name) => { panel.screen = name; bump(); };
 
 function quitVR() {
   const session = renderer.xr.getSession();
   if (session) session.end();
-  else menu.status = 'Quit works inside VR (close the tab on desktop)';
+  else { panel.status = 'Quit works inside VR (close the tab on desktop)'; bump(); }
 }
-const MENU_BUTTONS = [
-  { label: 'Reset Cans', key: 'A', y: 96, action: () => resetCans() },
-  { label: 'Refill Balls', key: 'Y', y: 192, action: () => spawnBalls() },
-  { label: 'Quit VR', key: 'B hold', y: 288, action: () => quitVR() },
-];
-const menu = { status: '', drawnKey: '' };
-function activateMenu(i) { play('click', menuMesh.position, 0.8); MENU_BUTTONS[i].action(); }
 
-function drawMenu() {
-  const hovers = hands.map(h => h.hover).join(',');
-  const key = `${hovers}|${menu.status}`;
-  if (key === menu.drawnKey) return;
-  menu.drawnKey = key;
-  const g = menuCanvas.getContext('2d');
-  g.clearRect(0, 0, MENU_W, MENU_H);
-  g.fillStyle = 'rgba(15,15,22,0.92)';
-  g.beginPath(); g.roundRect(0, 0, MENU_W, MENU_H, 32); g.fill();
-  g.strokeStyle = '#ffe9a8'; g.lineWidth = 6; g.stroke();
-  g.textBaseline = 'middle';
-  g.fillStyle = '#ffe9a8'; g.font = 'bold 44px sans-serif'; g.textAlign = 'center';
-  g.fillText('CAN TOSS', MENU_W / 2, 48);
-  MENU_BUTTONS.forEach((b, i) => {
-    const hot = hands.some(h => h.hover === i);
-    g.fillStyle = hot ? '#e0a526' : '#2d3340';
-    g.beginPath(); g.roundRect(36, b.y, 440, 80, 16); g.fill();
-    g.fillStyle = hot ? '#111' : '#fff'; g.font = 'bold 38px sans-serif'; g.textAlign = 'left';
-    g.fillText(b.label, 58, b.y + 40);
-    g.font = '28px sans-serif'; g.textAlign = 'right'; g.fillStyle = hot ? '#222' : '#ffe9a8';
-    g.fillText(b.key, 460, b.y + 40);
-  });
-  // controls guide
-  g.fillStyle = '#ffe9a8'; g.font = 'bold 32px sans-serif'; g.textAlign = 'left';
-  g.fillText('CONTROLS', 36, 408);
-  const rows = [['TRIGGER / GRIP', 'grab / throw'], ['A', 'reset cans'], ['B  (hold 1 s)', 'quit VR'],
-                ['X', 'show / hide hints'], ['Y', 'refill balls']];
-  rows.forEach(([k, t], i) => {
-    const y = 456 + i * 46;
-    g.fillStyle = '#2d3340'; g.beginPath(); g.roundRect(36, y - 18, 210, 36, 10); g.fill();
-    g.fillStyle = '#ffe9a8'; g.font = 'bold 24px sans-serif'; g.fillText(k, 48, y);
-    g.fillStyle = '#fff'; g.font = '24px sans-serif'; g.fillText(t, 260, y);
-  });
-  g.fillStyle = '#9fb0c8'; g.font = '22px sans-serif'; g.textAlign = 'center';
-  g.fillText('Point at a button and pull the trigger', MENU_W / 2, 690);
-  if (menu.status) {
-    g.fillStyle = '#ff8a7a'; g.font = 'bold 26px sans-serif';
-    g.fillText(menu.status, MENU_W / 2, 668);
+// each screen returns its buttons: { x, y, w, h, label, right?, action, disabled? }
+const btn = (y, label, action, extra = {}) => ({ x: 36, y, w: 440, h: 60, label, action, ...extra });
+function screenButtons() {
+  const sc = panel.screen;
+  if (sc === 'main') return [
+    btn(84, 'Reset Cans', () => resetCans(), { right: 'A' }),
+    btn(156, 'Refill Balls', () => spawnBalls(), { right: 'Y' }),
+    { id: 'minus', x: 36, y: 228, w: 70, h: 60, label: '−', action: () => setRows(settings.rows - 1), disabled: settings.rows <= MIN_ROWS, center: true },
+    { id: 'plus', x: 406, y: 228, w: 70, h: 60, label: '+', action: () => setRows(settings.rows + 1), disabled: settings.rows >= MAX_ROWS, center: true },
+    btn(300, 'Leaderboard', () => { panel.viewRows = settings.rows; showScreen('board'); }),
+    btn(372, `Quality: ${settings.quality === 'high' ? 'High' : 'Low (faster)'}`, () => setQuality(settings.quality === 'high' ? 'low' : 'high')),
+    btn(444, 'Controls', () => showScreen('controls')),
+    btn(516, 'Quit VR', () => quitVR(), { right: 'B hold' }),
+    btn(588, 'Close menu', () => closePanel(), { right: 'X' }),
+  ];
+  if (sc === 'controls') return [btn(626, 'Got it', () => { settings.tutorialDone = true; saveSettings(); closePanel(); })];
+  if (sc === 'board') return [
+    { id: 'prev', x: 36, y: 80, w: 70, h: 56, label: '◀', action: () => { panel.viewRows = Math.max(MIN_ROWS, panel.viewRows - 1); bump(); }, disabled: panel.viewRows <= MIN_ROWS, center: true },
+    { id: 'next', x: 406, y: 80, w: 70, h: 56, label: '▶', action: () => { panel.viewRows = Math.min(MAX_ROWS, panel.viewRows + 1); bump(); }, disabled: panel.viewRows >= MAX_ROWS, center: true },
+    btn(642, 'Back', () => showScreen('main'), { h: 56 }),
+  ];
+  if (sc === 'result') {
+    const res = panel.result, out = [];
+    const canSave = res && !res.saved && res.rank <= BOARD_SIZE;
+    if (canSave) {
+      [0, 1, 2].forEach(i => {
+        const x = 128 + i * 90;
+        out.push({ id: `up${i}`, x, y: 322, w: 70, h: 44, label: '▲', center: true, action: () => cycleName(i, 1) });
+        out.push({ id: `dn${i}`, x, y: 430, w: 70, h: 44, label: '▼', center: true, action: () => cycleName(i, -1) });
+      });
+      out.push(btn(504, 'Save score', () => saveResult(), { id: 'save' }));
+    }
+    out.push(btn(canSave ? 574 : 504, 'Play Again', () => resetCans()));
+    out.push(btn(canSave ? 644 : 574, res && res.saved ? 'Leaderboard' : 'Close', () => (res && res.saved ? (panel.viewRows = settings.rows, showScreen('board')) : closePanel()), { h: 56 }));
+    return out;
   }
-  menuTex.needsUpdate = true;
+  return [];
+}
+function cycleName(i, d) {
+  const c = panel.name[i].charCodeAt(0) - 65;
+  panel.name[i] = String.fromCharCode(65 + ((c + d + 26) % 26));
+  bump();
+}
+function saveResult() {
+  const res = panel.result;
+  if (!res || res.saved) return;
+  settings.name = panel.name.join(''); saveSettings();
+  addScore({ name: settings.name, rows: res.rows, points: res.points, throws: res.throws, time: res.time });
+  res.saved = true;
+  play('click', null, 0.9);
+  bump();
+}
+function setQuality(q) {
+  settings.quality = q; saveSettings();
+  sun.castShadow = q === 'high';
+  renderer.setPixelRatio(q === 'high' ? Math.min(window.devicePixelRatio, 2) : 1);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  bump();
+}
+function activatePanel(i) {
+  const b = panel.buttons[i];
+  if (!b || b.disabled) return;
+  play('click', null, 0.8);
+  b.action();
+}
+
+// ----- drawing -----
+function roundRect(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+function drawButton(g, b, hot) {
+  roundRect(g, b.x, b.y, b.w, b.h, 14);
+  g.fillStyle = b.disabled ? '#22252d' : hot ? '#e0a526' : '#2d3340'; g.fill();
+  g.fillStyle = b.disabled ? '#555' : hot ? '#111' : '#fff';
+  g.font = `bold ${b.center ? 34 : 32}px sans-serif`;
+  g.textAlign = b.center ? 'center' : 'left';
+  g.fillText(b.label, b.center ? b.x + b.w / 2 : b.x + 20, b.y + b.h / 2 + 2);
+  if (b.right) { g.font = '24px sans-serif'; g.textAlign = 'right'; g.fillStyle = hot ? '#222' : '#ffe9a8'; g.fillText(b.right, b.x + b.w - 16, b.y + b.h / 2 + 2); }
+}
+function drawPanel() {
+  const hovers = [...hands.map(h => h.hover), panel.mouseHover].join(',');
+  const key = `${panel.screen}|${panel.rev}|${hovers}|${panel.status}`;
+  if (key === panel.drawnKey) return;
+  panel.drawnKey = key;
+  panel.buttons = screenButtons();
+  const g = panelCanvas.getContext('2d');
+  g.clearRect(0, 0, PANEL_W, PANEL_H);
+  roundRect(g, 0, 0, PANEL_W, PANEL_H, 32); g.fillStyle = 'rgba(15,15,22,0.97)'; g.fill();
+  g.strokeStyle = '#ffe9a8'; g.lineWidth = 6; g.stroke();
+  g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillStyle = '#ffe9a8';
+  const title = (t, y = 44) => { g.font = 'bold 40px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#ffe9a8'; g.fillText(t, PANEL_W / 2, y); };
+  const sc = panel.screen;
+
+  if (sc === 'main') {
+    title('CAN TOSS');
+    g.fillStyle = '#fff'; g.font = 'bold 28px sans-serif'; g.textAlign = 'center';
+    g.fillText(`${settings.rows} rows · ${canCount(settings.rows)} cans`, PANEL_W / 2, 258);
+    g.fillStyle = '#9fb0c8'; g.font = '20px sans-serif'; g.fillText('pyramid size', PANEL_W / 2, 284);
+  } else if (sc === 'controls') {
+    title('CONTROLS');
+    const rows = [['TRIGGER / GRIP', 'grab / throw a ball'], ['A', 'reset the cans'], ['B  (hold 1 s)', 'quit VR'],
+                  ['X', 'open / close this menu'], ['Y', 'refill the balls'], ['MENU', 'point + trigger on a button']];
+    rows.forEach(([k, t], i) => {
+      const y = 112 + i * 64;
+      roundRect(g, 36, y - 22, 190, 44, 10); g.fillStyle = '#2d3340'; g.fill();
+      g.fillStyle = '#ffe9a8'; g.font = 'bold 22px sans-serif'; g.textAlign = 'left'; g.fillText(k, 48, y);
+      g.fillStyle = '#fff'; g.font = '22px sans-serif'; g.fillText(t, 240, y);
+    });
+    g.fillStyle = '#9fb0c8'; g.font = '22px sans-serif'; g.textAlign = 'center';
+    g.fillText('Hold a controller up to your face to see its labels', PANEL_W / 2, 560);
+    g.fillText('Knock all the cans down for a fast, low-throw score', PANEL_W / 2, 596);
+  } else if (sc === 'board') {
+    title('LEADERBOARD', 36);
+    g.fillStyle = '#fff'; g.font = 'bold 28px sans-serif'; g.textAlign = 'center';
+    g.fillText(`${canCount(panel.viewRows)} cans`, PANEL_W / 2, 108);
+    const list = topFor(panel.viewRows).slice(0, BOARD_SIZE);
+    g.font = '18px sans-serif'; g.fillStyle = '#9fb0c8';
+    g.textAlign = 'left'; g.fillText('#  NAME', 40, 160); g.textAlign = 'right';
+    g.fillText('SCORE', 270, 160); g.fillText('THROWS', 370, 160); g.fillText('TIME', 470, 160);
+    if (!list.length) { g.fillStyle = '#9fb0c8'; g.font = '24px sans-serif'; g.textAlign = 'center'; g.fillText('No scores yet — be the first!', PANEL_W / 2, 360); }
+    list.forEach((e, i) => {
+      const y = 196 + i * 42;
+      g.fillStyle = i === 0 ? '#ffe9a8' : '#fff'; g.font = 'bold 26px sans-serif';
+      g.textAlign = 'left'; g.fillText(`${i + 1}  ${e.name}`, 40, y);
+      g.textAlign = 'right'; g.fillText(String(e.points), 270, y);
+      g.font = '24px sans-serif'; g.fillText(String(e.throws), 370, y); g.fillText(fmtTime(e.time), 470, y);
+    });
+    g.fillStyle = '#6f7d92'; g.font = '16px sans-serif'; g.textAlign = 'center';
+    g.fillText('score = cans × 50 × (throw efficiency + time efficiency)', PANEL_W / 2, 622);
+  } else if (sc === 'result' && panel.result) {
+    const res = panel.result;
+    title('YOU WIN!');
+    g.fillStyle = '#fff'; g.font = '26px sans-serif'; g.textAlign = 'center';
+    g.fillText(`${res.n} cans  ·  ${fmtTime(res.time)}  ·  ${res.throws} ${res.throws === 1 ? 'throw' : 'throws'}`, PANEL_W / 2, 100);
+    g.fillStyle = '#ffe9a8'; g.font = 'bold 76px sans-serif'; g.fillText(String(res.points), PANEL_W / 2, 176);
+    g.fillStyle = '#9fb0c8'; g.font = '20px sans-serif';
+    g.fillText(`throws ×${res.throwEff.toFixed(2)}  +  time ×${res.timeEff.toFixed(2)}  (max ×2 each)`, PANEL_W / 2, 226);
+    g.fillStyle = res.rank <= BOARD_SIZE ? '#7dffa0' : '#ff9a8a'; g.font = 'bold 28px sans-serif';
+    g.fillText(res.saved ? 'Saved ✓' : res.rank === 1 ? 'New best score!' : res.rank <= BOARD_SIZE ? `Rank #${res.rank}` : 'Not in the top 10 — try again!', PANEL_W / 2, 272);
+    if (!res.saved && res.rank <= BOARD_SIZE) {
+      g.fillStyle = '#fff'; g.font = '20px sans-serif'; g.fillText('your initials', PANEL_W / 2, 306);
+      panel.name.forEach((ch, i) => { g.fillStyle = '#ffe9a8'; g.font = 'bold 54px sans-serif'; g.fillText(ch, 128 + i * 90 + 35, 398); });
+    }
+  }
+  panel.buttons.forEach((b, i) => drawButton(g, b, hands.some(h => h.hover === i) || panel.mouseHover === i));
+  if (panel.status) { g.fillStyle = '#ff8a7a'; g.font = 'bold 24px sans-serif'; g.textAlign = 'center'; g.fillText(panel.status, PANEL_W / 2, 700); }
+  panelTex.needsUpdate = true;
 }
 
 const ray = new THREE.Raycaster();
 const _o = new THREE.Vector3(), _d = new THREE.Vector3(), _q = new THREE.Quaternion();
-function updateMenu() {
+function buttonAtUV(uv) {
+  const px = uv.x * PANEL_W, py = (1 - uv.y) * PANEL_H;
+  for (let i = panel.buttons.length - 1; i >= 0; i--) {
+    const b = panel.buttons[i];
+    if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) return i;
+  }
+  return -1;
+}
+function updatePanel() {
+  if (!panel.open) { for (const h of hands) h.hover = -1; return; }
+  drawPanel(); // keep the button list current before hit-testing
   for (const h of hands) {
     h.ctrl.getWorldPosition(_o);
     h.ctrl.getWorldQuaternion(_q);
@@ -774,20 +1054,18 @@ function updateMenu() {
     ray.set(_o, _d);
     const hit = ray.intersectObject(menuMesh)[0];
     h.hover = -1;
-    if (hit && hit.distance < 4 && !h.held) {
-      const px = hit.uv.x * MENU_W, py = (1 - hit.uv.y) * MENU_H;
-      MENU_BUTTONS.forEach((b, i) => { if (px >= 36 && px <= 476 && py >= b.y && py <= b.y + 80) h.hover = i; });
-      h.laser.scale.z = hit.distance;
-    }
-    h.laser.visible = !!hit && hit.distance < 4 && !h.held;
+    const aiming = !!hit && hit.distance < 4 && !h.held;
+    if (aiming) { h.hover = buttonAtUV(hit.uv); h.laser.scale.z = hit.distance; }
+    h.laser.visible = aiming;
   }
-  drawMenu();
+  drawPanel();
 }
 
-// Controller buttons while in VR: A reset cans, B (hold) quit, X hints, Y refill balls.
+// Controller buttons while in VR: A reset cans, B (hold) quit, X menu, Y refill balls.
 // Quest layout: buttons[4] = A / X, buttons[5] = B / Y.
 const latch = {};
 let quitHold = 0;
+const QUIT_HOLD = 1.0; // seconds
 function pollVRButtons(dt) {
   const session = renderer.xr.getSession();
   if (!session) { quitHold = 0; return; }
@@ -801,19 +1079,24 @@ function pollVRButtons(dt) {
       if (edge('A', p4)) { play('click', null, 0.8); resetCans(); }
       bRight = p5;
     } else if (src.handedness === 'left') {
-      if (edge('X', p4)) { guide.show = !guide.show; guide.touched = true; play('click', null, 0.8); }
+      if (edge('X', p4)) togglePanel();
       if (edge('Y', p5)) { play('click', null, 0.8); spawnBalls(); }
     }
   }
   quitHold = bRight ? quitHold + dt : 0;
-  menu.status = bRight ? `Hold B to quit VR… ${Math.min(100, Math.round(quitHold / QUIT_HOLD * 100))}%` : '';
+  const status = bRight ? `Hold B to quit VR… ${Math.min(100, Math.round(quitHold / QUIT_HOLD * 100))}%` : '';
+  if (status !== panel.status) { panel.status = status; bump(); }
   if (quitHold >= QUIT_HOLD) { quitHold = 0; quitVR(); }
 }
-const QUIT_HOLD = 1.0; // seconds
 
 // ---------- desktop fallback: drag to look, WASD to move, click to throw ----------
 const keys = {};
-window.addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'KeyR') resetCans(); });
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'KeyR') resetCans();
+  if (e.code === 'KeyM') togglePanel();
+});
+document.getElementById('menuBtn').addEventListener('click', togglePanel);
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
 let dragging = false, moved = 0, lastX = 0, lastY = 0;
@@ -826,9 +1109,29 @@ window.addEventListener('mousemove', e => {
   camera.rotation.y -= dx * 0.004;
   camera.rotation.x = Math.max(-1.4, Math.min(1.4, camera.rotation.x - dy * 0.004));
 });
-window.addEventListener('mouseup', () => {
-  if (dragging && moved < 5 && !renderer.xr.isPresenting) throwBall();
+function panelHitFromMouse(e) { // which panel button (or -2 = panel body, -1 = not on the panel) is under the mouse?
+  if (!panel.open) return -1;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObject(menuMesh)[0];
+  if (!hit) return -1;
+  const i = buttonAtUV(hit.uv);
+  return i >= 0 ? i : -2;
+}
+window.addEventListener('mousemove', e => {
+  const i = panelHitFromMouse(e);
+  const v = i >= 0 ? i : -1;
+  if (v !== panel.mouseHover) { panel.mouseHover = v; renderer.domElement.style.cursor = v >= 0 ? 'pointer' : ''; }
+});
+window.addEventListener('mouseup', (e) => {
+  const wasClick = dragging && moved < 5;
   dragging = false;
+  if (!wasClick || renderer.xr.isPresenting) return;
+  const i = panelHitFromMouse(e);
+  if (i >= 0) { activatePanel(i); return; }
+  if (i === -2) return; // clicked the panel itself: don't throw a ball through it
+  throwBall();
 });
 
 function throwBall(speed = 8) {
@@ -836,7 +1139,7 @@ function throwBall(speed = 8) {
   const p = camera.getWorldPosition(new THREE.Vector3()).addScaledVector(dir, 0.4);
   const ball = makeBall(p.x, p.y, p.z);
   ball.body.velocity.set(dir.x * speed, dir.y * speed + 1.5, dir.z * speed);
-  score.throws++;
+  registerThrow();
   play('whoosh', p, 0.6);
   return ball;
 }
@@ -851,6 +1154,169 @@ function moveDesktop(dt) {
   rig.position.z += (-Math.cos(yaw) * f - Math.sin(yaw) * r) * 2 * dt;
 }
 
+// ---------- win celebration: confetti cannons, confetti rain, fireworks, banner ----------
+const CONFETTI_MAX = 260, SPARK_MAX = 800;
+const FX = { confettiLive: 0, sparksLive: 0, rainWaves: [], fireworks: [], bannerAt: null };
+const dummy = new THREE.Object3D();
+const confettiMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.05, 0.025),
+  new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, fog: false }), CONFETTI_MAX);
+confettiMesh.frustumCulled = false;
+confettiMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+const cPos = new Float32Array(CONFETTI_MAX * 3), cVel = new Float32Array(CONFETTI_MAX * 3);
+const cRot = new Float32Array(CONFETTI_MAX * 3), cSpin = new Float32Array(CONFETTI_MAX * 3);
+const cLife = new Float32Array(CONFETTI_MAX);
+const CONFETTI_COLORS = [0xe74c3c, 0xf1c40f, 0x2ecc71, 0x3498db, 0x9b59b6, 0xff7fb0, 0xffffff].map(c => new THREE.Color(c));
+dummy.scale.setScalar(0); dummy.updateMatrix();
+for (let i = 0; i < CONFETTI_MAX; i++) { confettiMesh.setMatrixAt(i, dummy.matrix); confettiMesh.setColorAt(i, CONFETTI_COLORS[i % CONFETTI_COLORS.length]); }
+scene.add(confettiMesh);
+let cNext = 0;
+function emitConfetti(x, y, z, vx, vy, vz, life = 5) {
+  const i = cNext; cNext = (cNext + 1) % CONFETTI_MAX;
+  cPos.set([x, y, z], i * 3); cVel.set([vx, vy, vz], i * 3);
+  cRot.set([rnd(0, 6), rnd(0, 6), rnd(0, 6)], i * 3); cSpin.set([rnd(-12, 12), rnd(-12, 12), rnd(-12, 12)], i * 3);
+  cLife[i] = life;
+  confettiMesh.setColorAt(i, CONFETTI_COLORS[(Math.random() * CONFETTI_COLORS.length) | 0]);
+  confettiMesh.instanceColor.needsUpdate = true;
+}
+
+const sparkTex = canvasTex(64, 64, (g, w, h) => {
+  const gr = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+});
+const sGeo = new THREE.BufferGeometry();
+const sPos = new Float32Array(SPARK_MAX * 3).fill(-100), sCol = new Float32Array(SPARK_MAX * 3);
+sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3).setUsage(THREE.DynamicDrawUsage));
+sGeo.setAttribute('color', new THREE.BufferAttribute(sCol, 3).setUsage(THREE.DynamicDrawUsage));
+const sparksPts = new THREE.Points(sGeo, new THREE.PointsMaterial({
+  size: 0.16, map: sparkTex, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+sparksPts.frustumCulled = false;
+scene.add(sparksPts);
+const sVel = new Float32Array(SPARK_MAX * 3), sLife = new Float32Array(SPARK_MAX), sMax = new Float32Array(SPARK_MAX);
+const sBase = new Float32Array(SPARK_MAX * 3), sRocket = new Uint8Array(SPARK_MAX);
+let sNext = 0;
+function emitSpark(x, y, z, vx, vy, vz, life, color, rocket = 0) {
+  const i = sNext; sNext = (sNext + 1) % SPARK_MAX;
+  sPos.set([x, y, z], i * 3); sVel.set([vx, vy, vz], i * 3);
+  sLife[i] = life; sMax[i] = life; sRocket[i] = rocket;
+  sBase.set([color.r, color.g, color.b], i * 3);
+  return i;
+}
+const sBurst = new Array(SPARK_MAX).fill(null); // what a rocket turns into when it peaks
+const ROCKET_COLOR = new THREE.Color(1, 0.8, 0.4), TRAIL_COLOR = new THREE.Color(1, 0.6, 0.2);
+function burst(x, y, z, color, n) {
+  for (let k = 0; k < n; k++) {
+    const u = Math.random() * 2 - 1, a = Math.random() * Math.PI * 2, rr = Math.sqrt(1 - u * u), sp = rnd(2.5, 6);
+    emitSpark(x, y, z, rr * Math.cos(a) * sp, u * sp, rr * Math.sin(a) * sp, rnd(1.1, 1.7), color);
+  }
+  play('boom', new THREE.Vector3(x, y, z), 0.7);
+}
+
+const bannerTex = canvasTex(1024, 256, (g, w, h) => {
+  g.font = 'bold 190px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.lineWidth = 16; g.strokeStyle = '#7a1f12'; g.strokeText('YOU WIN!', w / 2, h / 2 + 8);
+  const gr = g.createLinearGradient(0, 40, 0, 220); gr.addColorStop(0, '#fff6a8'); gr.addColorStop(1, '#f1a712');
+  g.fillStyle = gr; g.fillText('YOU WIN!', w / 2, h / 2 + 8);
+});
+const banner = new THREE.Sprite(new THREE.SpriteMaterial({ map: bannerTex, transparent: true, depthTest: false, fog: false }));
+banner.renderOrder = 9; banner.visible = false;
+banner.position.set(0, 1.95, -2.4);
+scene.add(banner);
+
+function celebrate() {
+  const q = settings.quality === 'low' ? 0.5 : 1;
+  play('win', null, 1); play('cheer', null, 0.9);
+  for (const side of [-1, 1]) { // two confetti cannons either side of the counter
+    play('pop', new THREE.Vector3(side * 0.9, 1.0, -3.7), 0.9);
+    for (let i = 0; i < 70 * q; i++) emitConfetti(side * 0.9, 1.0, -3.7, -side * rnd(0.4, 2.4), rnd(3, 6.5), rnd(-1.3, 1.3));
+  }
+  FX.rainWaves = [0.5, 1.2, 1.9].map(d => ({ at: simTime + d, n: Math.round(45 * q) }));
+  FX.fireworks = [0, 1, 2, 3, 4, 5].map(k => ({ at: simTime + 0.4 + k * 0.75 + rnd(0, 0.3), x: rnd(-7, 7), z: rnd(-15, -8),
+    color: new THREE.Color().setHSL(Math.random(), 1, 0.6), n: Math.round(70 * q) }));
+  FX.bannerAt = simTime;
+  haptic(null, 0.7, 250);
+}
+
+function updateFX(dt) {
+  // scheduled confetti rain + rockets
+  for (let k = FX.rainWaves.length - 1; k >= 0; k--) {
+    const w = FX.rainWaves[k];
+    if (simTime < w.at) continue;
+    for (let i = 0; i < w.n; i++) emitConfetti(rnd(-2.2, 2.2), rnd(3, 3.6), rnd(-5, -1.5), rnd(-0.4, 0.4), rnd(-1.8, -0.6), rnd(-0.4, 0.4), 6);
+    FX.rainWaves.splice(k, 1);
+  }
+  for (let k = FX.fireworks.length - 1; k >= 0; k--) {
+    const f = FX.fireworks[k];
+    if (simTime < f.at) continue;
+    sBurst[emitSpark(f.x, 0.3, f.z, 0, 9, 0, 1.0, ROCKET_COLOR, 1)] = { color: f.color, n: f.n };
+    FX.fireworks.splice(k, 1);
+  }
+
+  let live = 0;
+  for (let i = 0; i < CONFETTI_MAX; i++) {
+    if (cLife[i] <= 0) continue;
+    live++;
+    const o = i * 3;
+    cLife[i] -= dt;
+    const onGround = cPos[o + 1] <= 0.015;
+    if (!onGround) {
+      cVel[o + 1] -= 3.2 * dt;                                  // light paper: gentle gravity
+      const drag = Math.max(0, 1 - 1.8 * dt);
+      cVel[o] *= drag; cVel[o + 2] *= drag; if (cVel[o + 1] < -1.2) cVel[o + 1] = -1.2; // terminal velocity
+      cVel[o] += Math.sin(cLife[i] * 9 + i) * 0.6 * dt;         // flutter
+      cPos[o] += cVel[o] * dt; cPos[o + 1] += cVel[o + 1] * dt; cPos[o + 2] += cVel[o + 2] * dt;
+      cRot[o] += cSpin[o] * dt; cRot[o + 1] += cSpin[o + 1] * dt; cRot[o + 2] += cSpin[o + 2] * dt;
+      if (cPos[o + 1] < 0.015) cPos[o + 1] = 0.015;
+    }
+    dummy.position.set(cPos[o], cPos[o + 1], cPos[o + 2]);
+    dummy.rotation.set(onGround ? -Math.PI / 2 : cRot[o], cRot[o + 1], cRot[o + 2]);
+    dummy.scale.setScalar(cLife[i] > 0 ? Math.min(1, cLife[i] / 0.6) : 0);
+    dummy.updateMatrix();
+    confettiMesh.setMatrixAt(i, dummy.matrix);
+  }
+  if (live || FX.confettiLive) confettiMesh.instanceMatrix.needsUpdate = true;
+  FX.confettiLive = live;
+
+  live = 0;
+  for (let i = 0; i < SPARK_MAX; i++) {
+    if (sLife[i] <= 0) continue;
+    live++;
+    const o = i * 3;
+    sLife[i] -= dt;
+    if (sRocket[i]) {
+      sVel[o + 1] -= 5 * dt;
+      emitSpark(sPos[o], sPos[o + 1], sPos[o + 2], rnd(-0.3, 0.3), rnd(-1, 0), rnd(-0.3, 0.3), 0.4, TRAIL_COLOR); // trail
+    } else {
+      sVel[o + 1] -= 4 * dt;
+      const drag = Math.max(0, 1 - 1.2 * dt); sVel[o] *= drag; sVel[o + 2] *= drag;
+    }
+    sPos[o] += sVel[o] * dt; sPos[o + 1] += sVel[o + 1] * dt; sPos[o + 2] += sVel[o + 2] * dt;
+    if (sLife[i] <= 0) {
+      const px = sPos[o], py = sPos[o + 1], pz = sPos[o + 2];
+      sPos[o + 1] = -100; sCol[o] = sCol[o + 1] = sCol[o + 2] = 0;
+      if (sRocket[i] && sBurst[i]) { burst(px, py, pz, sBurst[i].color, sBurst[i].n); sBurst[i] = null; }
+      continue;
+    }
+    const f = Math.pow(sLife[i] / sMax[i], 1.3);
+    sCol[o] = sBase[o] * f; sCol[o + 1] = sBase[o + 1] * f; sCol[o + 2] = sBase[o + 2] * f;
+  }
+  if (live || FX.sparksLive) { sGeo.attributes.position.needsUpdate = true; sGeo.attributes.color.needsUpdate = true; }
+  FX.sparksLive = live;
+
+  // banner: pop in, hold, fade
+  if (FX.bannerAt !== null) {
+    const t = simTime - FX.bannerAt;
+    if (t > 5.5) { banner.visible = false; FX.bannerAt = null; }
+    else {
+      banner.visible = true;
+      const pop = t < 0.5 ? 1 + 2.70158 * Math.pow(t / 0.5 - 1, 3) + 1.70158 * Math.pow(t / 0.5 - 1, 2) : 1; // ease-out-back
+      const s = Math.max(0.001, pop) * (1 + 0.03 * Math.sin(t * 6));
+      banner.scale.set(1.6 * s, 0.4 * s, 1);
+      banner.material.opacity = t > 4.5 ? Math.max(0, 5.5 - t) : 1;
+    }
+  }
+}
+
 // ---------- main loop ----------
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
@@ -858,8 +1324,10 @@ renderer.setAnimationLoop(() => {
   moveDesktop(dt);
   pollVRButtons(dt);
   updateHands(dt);
-  updateMenu();
+  updatePanel();
   updateRefills();
+  updateFX(dt);
+  if (winPanelAt !== null && simTime >= winPanelAt) { winPanelAt = null; openPanel('result'); }
   // small fixed step: a 9.6 cm ball at ~10 m/s must not tunnel through 6.6 cm cans
   world.step(1 / 240, dt, 12);
   for (const { mesh, body } of dynamics) {
@@ -876,9 +1344,13 @@ renderer.setAnimationLoop(() => {
 });
 
 resetScene();
+setQuality(settings.quality);
+if (!settings.tutorialDone) openPanel('controls'); // first run only
 
 // handle for tests / debugging
-window.game = { THREE, scene, camera, rig, renderer, world, cans, balls, slots, hands, score, audio, menu, menuMesh, guide, MENU_BUTTONS, play, resetScene, resetCans, spawnBalls, throwBall, grab, release, quitVR };
+window.game = { THREE, scene, camera, rig, renderer, world, cans, balls, slots, hands, score, audio, panel, menuMesh, settings, FX, banner,
+  play, resetScene, resetCans, spawnBalls, throwBall, grab, release, quitVR, openPanel, closePanel, togglePanel, setRows, setQuality,
+  computePoints, addScore, topFor, loadBoard, exportBoard, importBoard, rankFor, celebrate, getSimTime: () => simTime };
 </script>
 </body>
 </html>

@@ -73,3 +73,20 @@ test('can sound uses inharmonic metal partials and a per-can pitch', () => {
   assert.match(moduleSrc, /CAN_PARTIALS/);
   assert.match(moduleSrc, /body\.pitch\s*=/);
 });
+
+test('storage access is guarded (private mode / blocked storage must not crash the game)', () => {
+  assert.match(moduleSrc, /try \{ const v = localStorage\.getItem/);
+  assert.match(moduleSrc, /try \{ localStorage\.setItem/);
+});
+
+test('celebration, leaderboard and size settings exist', () => {
+  for (const name of ['celebrate', 'computePoints', 'addScore', 'importBoard', 'exportBoard', 'setRows', 'setQuality']) {
+    assert.match(moduleSrc, new RegExp(`(function|const) ${name}\\b`), `missing ${name}`);
+  }
+  assert.match(moduleSrc, /MIN_ROWS = 3, MAX_ROWS = 6/);
+});
+
+test('help text is collapsed by default (not an always-on overlay)', () => {
+  assert.match(html, /#help \{\s*display: none/);
+  assert.match(html, /id="helpBtn"/);
+});
