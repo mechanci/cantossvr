@@ -90,3 +90,60 @@ test('help text is collapsed by default (not an always-on overlay)', () => {
   assert.match(html, /#help \{\s*display: none/);
   assert.match(html, /id="helpBtn"/);
 });
+
+// ---------------------------------------------------------------- friendly look, no direct branding
+
+test('design: fonts are Fredoka (interface and world) and Gochi Hand (chalkboard), from Google Fonts with system fallbacks', () => {
+  assert.match(html, /fonts\.googleapis\.com\/css2\?family=Fredoka:wght@400;500;600;700&family=Gochi\+Hand&display=swap/);
+  assert.match(moduleSrc, /FONT_SANS = 'Fredoka, "Segoe UI"/);
+  assert.match(moduleSrc, /WORLD_HAND = '"Gochi Hand"/);
+  assert.match(html, /--font: Fredoka/);
+  assert.doesNotMatch(html, /Lexend|IBM\+Plex|IBM Plex/);
+});
+
+test('design: warm palette (cream, wood, coral, sunshine) and no leftover dark-navy interface colours', () => {
+  for (const hex of ['#fff6e6', '#a8673a', '#ff6f61', '#ffc93c', '#3a2f2b']) assert.ok(html.toLowerCase().includes(hex), `missing ${hex}`);
+  for (const old of ['#0b1c28', '#13293a', '#1f4260', '#24405a', '#7d98ae', '#ff9d55']) assert.ok(!html.toLowerCase().includes(old), `old navy-theme colour ${old} is still in the page`);
+});
+
+test('design: canvas text goes through the font helpers (no bare sans-serif font strings)', () => {
+  assert.doesNotMatch(moduleSrc, /\d+px sans-serif/);
+});
+
+test('design: friendly shapes (pill buttons, rounded cards) and flat colour (no gradients in the page css)', () => {
+  const css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+  assert.match(css, /\.btn \{[^}]*border-radius: 999px/);
+  assert.doesNotMatch(css, /gradient\(/);
+  assert.match(moduleSrc, /roundRect\(g, 3, 3, PANEL_W - 6, PANEL_H - 6, 30\)/); // rounded cream card
+});
+
+test('no direct branding: no logo, brand name, lockup files or credit plate anywhere', () => {
+  assert.doesNotMatch(html, /three ?vertex|threevertex|lockup/i);
+  assert.doesNotMatch(html, /assets\//);
+  assert.ok(!fs.existsSync(path.join(__dirname, '..', 'assets')), 'assets/ (logo files) should not exist');
+  assert.doesNotMatch(moduleSrc, /credit_plate|new Image\(\)/);
+});
+
+test('"You win" appears once: only the banner says it (not the chalkboard, not the score card)', () => {
+  assert.doesNotMatch(moduleSrc, /chalk\([^)]*you win/i);
+  assert.doesNotMatch(moduleSrc, /title\('You win/i);
+  assert.match(moduleSrc, /title\('Your score'\)/);
+  assert.strictEqual((moduleSrc.match(/fillText\('YOU WIN!'/g) || []).length, 1);
+});
+
+test('scene: the booth is ported from the Claude Design scene, merged for performance, with real colliders', () => {
+  assert.match(moduleSrc, /mergeGeometries/);
+  assert.match(moduleSrc, /function mergeStatic/);
+  assert.match(moduleSrc, /function booth\(/);
+  assert.match(moduleSrc, /addCollider\(3\.18, COUNTER_TOP/);       // counter
+  assert.match(moduleSrc, /addCollider\(3\.0, 2\.4, 0\.06/);         // back wall
+  assert.match(moduleSrc, /woodBox\(1\.2, TABLE_TOP, 0\.6, 0, TABLE_TOP \/ 2, -4\)/);   // can table keeps its real place
+  assert.match(moduleSrc, /woodBox\(0\.8, PEDESTAL_TOP, 0\.4, 0, PEDESTAL_TOP \/ 2, -0\.8\)/); // ball stand too
+  assert.doesNotMatch(moduleSrc, /CircleGeometry\(90/);               // no giant ground triangles (depth-sorting artefacts)
+});
+
+test('VR keyboard: on-screen keys exist for A-Z, 0-9 and DEL', () => {
+  assert.match(moduleSrc, /\['1234567890', 'QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'\]/);
+  assert.match(moduleSrc, /id: 'key_DEL'/);
+  assert.match(moduleSrc, /function typeKey/);
+});
