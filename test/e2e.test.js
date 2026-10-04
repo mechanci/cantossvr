@@ -214,16 +214,44 @@ test('10 cans and 4 balls are created with physics bodies', async () => {
   await page.close();
 });
 
-test('Reset Cans rebuilds the pyramid and leaves the balls alone', async () => {
+test('Reset Game rebuilds the pyramid, refills the balls, and stops the celebration', async () => {
   const { page } = await openPage();
   await settle(page, 1000);
   const before = await page.evaluate(() => { window.game.cans[0].body.position.set(5, 5, 5); window.game.throwBall(); return window.game.balls.length; });
   await page.click('#resetBtn');
   const after = await page.evaluate(() => [window.game.cans.length, window.game.balls.length]);
-  assert.deepStrictEqual(after, [10, before]);
+  assert.deepStrictEqual(after, [10, 4]);
   await settle(page, 1500);
   const { cans } = await snap(page);
   assert.ok(cans.every(p => Math.abs(p[0]) < 0.3 && p[1] > 0.9), 'cans not back on the counter');
+  await page.close();
+});
+
+test('Reset Game during the win celebration stops the confetti, fireworks and banner at once', async () => {
+  const { page } = await openPage();
+  await settle(page, 600);
+  await page.evaluate(() => { window.game.throwBall(); window.game.cans.forEach(c => c.body.position.set(3, 0.3, -2)); });
+  await page.waitForFunction(() => window.game.FX.confettiLive > 20 && window.game.banner.visible);
+  await page.click('#resetBtn');
+  const r = await page.evaluate(() => ({ fx: window.game.FX, banner: window.game.banner.visible, panel: window.game.panel.open }));
+  assert.strictEqual(r.fx.confettiLive, 0); assert.strictEqual(r.fx.sparksLive, 0);
+  assert.deepStrictEqual([r.fx.rainWaves.length, r.fx.fireworks.length, r.banner, r.panel], [0, 0, false, false]);
+  await page.waitForTimeout(2500);                          // nothing is re-launched afterwards
+  assert.strictEqual(await page.evaluate(() => window.game.FX.sparksLive + window.game.FX.confettiLive), 0);
+  await page.close();
+});
+
+test('name field placeholder is a fixed "PLAYER", never the last typed name', async () => {
+  const { page } = await openPage();
+  await settle(page, 600);
+  await page.evaluate(() => { window.game.throwBall(); window.game.cans.forEach(c => c.body.position.set(3, 0.3, -2)); });
+  await page.waitForFunction(() => window.game.panel.open && window.game.panel.screen === 'result', null, { timeout: 40000 });
+  await page.keyboard.type('hasham'); await page.keyboard.press('Enter');
+  await page.click('#resetBtn');
+  await page.evaluate(() => { window.game.throwBall(); window.game.cans.forEach(c => c.body.position.set(3, 0.3, -2)); });
+  await page.waitForFunction(() => window.game.panel.open && window.game.panel.screen === 'result' && !window.game.panel.result.saved, null, { timeout: 40000 });
+  await page.keyboard.press('Enter');                       // saves with the placeholder
+  assert.ok((await page.evaluate(() => window.game.topFor(4).map(e => e.name))).includes('PLAYER'));
   await page.close();
 });
 
@@ -333,7 +361,7 @@ test('menu is hidden by default; X summons it in front of you, facing you', asyn
   await page.close();
 });
 
-test('VR menu: pointing at a button highlights it and the trigger presses it (Reset Cans)', async () => {
+test('VR menu: pointing at a button highlights it and the trigger presses it (Reset Game)', async () => {
   const { page } = await openPage();
   await settle(page, 1500);
   const r = await page.evaluate(async () => {
@@ -344,7 +372,7 @@ test('VR menu: pointing at a button highlights it and the trigger presses it (Re
     hand.ctrl.matrixAutoUpdate = true;
     cans[0].body.position.set(5, 5, 5); // wreck the pyramid
     menuMesh.updateMatrixWorld(true);
-    // centre of the "Reset Cans" button (canvas 256,114 of 512x720)
+    // centre of the "Reset Game" button (canvas 256,114 of 512x720)
     const local = new THREE.Vector3(0, ((1 - 114 / 720) - 0.5) * 0.5 * 720 / 512, 0);
     const target = menuMesh.localToWorld(local);
     const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(menuMesh.quaternion);
@@ -357,7 +385,7 @@ test('VR menu: pointing at a button highlights it and the trigger presses it (Re
     const x = window.game.cans[0].body.position.x;
     return { hover, laser, restored: Math.abs(x) < 0.3 };
   });
-  assert.strictEqual(r.hover, 0, 'Reset Cans button not hovered');
+  assert.strictEqual(r.hover, 0, 'Reset Game button not hovered');
   assert.ok(r.laser, 'pointer line not shown');
   assert.ok(r.restored, 'pressing the button did not reset the cans');
   await page.close();
@@ -624,7 +652,6 @@ test('leaderboard: save a win with initials, shows on the board, survives reload
   await page.waitForFunction(() => window.game && window.game.cans.length > 0);
   assert.strictEqual((await page.evaluate(() => window.game.topFor(4))).length, 1, 'score did not survive reload');
   assert.strictEqual((await page.evaluate(() => window.game.topFor(5))).length, 0, 'scores must be per pyramid size');
-  assert.strictEqual(await page.evaluate(() => window.game.settings.name), 'REMY', 'last name should be remembered');
   await page.close();
 });
 

@@ -99,7 +99,7 @@
 <body>
 <div id="boot"><span id="bootText">Loading Can Toss…</span></div>
 <div id="bar">
-  <button id="resetBtn" class="btn">Reset Cans</button>
+  <button id="resetBtn" class="btn">Reset Game</button>
   <button id="refillBtn" class="btn">Refill Balls</button>
   <button id="menuBtn" class="btn btn--primary">Menu</button>
 </div>
@@ -119,13 +119,13 @@
     <dt><kbd>Release</kbd></dt><dd>throw the ball</dd>
     <dt><kbd>Esc</kbd></dt><dd>free the mouse</dd>
     <dt><kbd>WASD</kbd></dt><dd>move</dd>
-    <dt><kbd>R</kbd></dt><dd>reset cans</dd>
+    <dt><kbd>R</kbd></dt><dd>reset game</dd>
     <dt><kbd>M</kbd></dt><dd>menu</dd>
   </dl>
   <h2>VR</h2>
   <dl>
     <dt><kbd>Trigger / Grip</kbd></dt><dd>grab and throw</dd>
-    <dt><kbd>A</kbd></dt><dd>reset cans</dd>
+    <dt><kbd>A</kbd></dt><dd>reset game</dd>
     <dt><kbd>X</kbd></dt><dd>menu</dd>
     <dt><kbd>Y</kbd></dt><dd>refill balls</dd>
     <dt><kbd>B</kbd> hold</dt><dd>quit VR</dd>
@@ -205,6 +205,7 @@ const store = {
 };
 const SETTINGS_KEY = 'cantoss.settings', BOARD_KEY = 'cantoss.leaderboard.v1';
 const MIN_ROWS = 3, MAX_ROWS = 6, BOARD_SIZE = 10, MAX_NAME = 8;
+const PLACEHOLDER_NAME = 'PLAYER'; // shown in the name field until the player types; never remembered from an earlier game
 const settings = Object.assign({ rows: 4, quality: 'high', tutorialDone: false, name: 'AAA', pointerLock: true }, store.get(SETTINGS_KEY, {}));
 settings.rows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, Math.round(+settings.rows) || 4));
 if (settings.quality !== 'low') settings.quality = 'high';
@@ -998,14 +999,16 @@ function spawnBalls() {
   for (let i = 0; i < 4; i++) fillSlot(i);
 }
 
-function resetCans() { // the pyramid only: balls are left alone
+function resetCans() { // a full game reset: new pyramid, fresh balls, score and celebration cleared
   buildTower();
+  spawnBalls();
   Object.assign(score, { down: 0, throws: 0, won: false, t0: null, time: 0 });
   winPanelAt = null;
+  clearFX();
   if (panel.open && panel.screen === 'result') closePanel();
   drawBoard();
 }
-function resetScene() { resetCans(); spawnBalls(); }
+function resetScene() { resetCans(); }
 function setRows(n) {
   settings.rows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, n));
   panel.viewRows = settings.rows;
@@ -1062,7 +1065,7 @@ function tipTexture(lines) {
   return { tex: t, aspect: w / h };
 }
 const TIPS = {
-  right: [['TRIGGER', 'grab / throw'], ['GRIP', 'grab / throw'], ['A', 'reset cans'], ['B (HOLD)', 'quit VR']],
+  right: [['TRIGGER', 'grab / throw'], ['GRIP', 'grab / throw'], ['A', 'reset game'], ['B (HOLD)', 'quit VR']],
   left:  [['TRIGGER', 'grab / throw'], ['GRIP', 'grab / throw'], ['X', 'menu'], ['Y', 'refill balls']],
 };
 function makeTip(hand) { // a small hint card above the controller; only fades in when held up to your face
@@ -1246,7 +1249,7 @@ const btn = (y, label, action, extra = {}) => ({ x: 36, y, w: 440, h: 60, label,
 function screenButtons() {
   const sc = panel.screen;
   if (sc === 'main') return [
-    btn(84, 'Reset Cans', () => resetCans(), { right: 'A' }),
+    btn(84, 'Reset Game', () => resetCans(), { right: 'A' }),
     btn(156, 'Refill Balls', () => spawnBalls(), { right: 'Y' }),
     { id: 'minus', x: 36, y: 228, w: 70, h: 60, label: '−', action: () => setRows(settings.rows - 1), disabled: settings.rows <= MIN_ROWS, center: true },
     { id: 'plus', x: 406, y: 228, w: 70, h: 60, label: '+', action: () => setRows(settings.rows + 1), disabled: settings.rows >= MAX_ROWS, center: true },
@@ -1305,9 +1308,8 @@ function nameKey(e) {
 function saveResult() {
   const res = panel.result;
   if (!res || res.saved) return;
-  const name = panel.typed || settings.name;
-  settings.name = name.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, MAX_NAME) || 'AAA'; saveSettings();
-  addScore({ name: settings.name, rows: res.rows, points: res.points, throws: res.throws, time: res.time });
+  const name = (panel.typed || PLACEHOLDER_NAME).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, MAX_NAME) || PLACEHOLDER_NAME;
+  addScore({ name, rows: res.rows, points: res.points, throws: res.throws, time: res.time });
   res.saved = true;
   play('click', null, 0.9);
   bump();
@@ -1412,7 +1414,7 @@ function drawPanel() {
       g.strokeStyle = UI.accent; g.lineWidth = 3; roundRect(g, 37.5, fy + 1.5, 437, fh - 3, 13); g.stroke();
       const bar = caret ? '|' : ' ', ty = fy + fh / 2 + 1, size = vr ? 28 : 32;
       if (panel.typed) drawText(g, panel.typed + bar, 56, ty, { font: fnt(600, size), color: UI.heading });
-      else drawText(g, bar + settings.name, 56, ty, { font: fnt(400, size), color: UI.muted });
+      else drawText(g, bar + PLACEHOLDER_NAME, 56, ty, { font: fnt(400, size), color: UI.muted });
       if (!vr) label(panel.typed ? 'ENTER TO SAVE' : 'TYPE A NAME · ENTER TO USE THIS ONE', PANEL_W / 2, 416, { align: 'center', ls: 1 });
     }
   }
@@ -1449,7 +1451,7 @@ function updatePanel() {
   drawPanel();
 }
 
-// Controller buttons while in VR: A reset cans, B (hold) quit, X menu, Y refill balls.
+// Controller buttons while in VR: A reset game, B (hold) quit, X menu, Y refill balls.
 // Quest layout: buttons[4] = A / X, buttons[5] = B / Y.
 const latch = {};
 let quitHold = 0;
@@ -1708,6 +1710,18 @@ function celebrate() {
     color: new THREE.Color().setHSL(Math.random(), 1, 0.6), n: Math.round(70 * q) }));
   FX.bannerAt = simTime;
   haptic(null, 0.7, 250);
+}
+
+// Stop the party at once (game reset): drop scheduled bursts, hide every confetti piece and spark, hide the banner.
+function clearFX() {
+  FX.rainWaves = []; FX.fireworks = []; FX.bannerAt = null; banner.visible = false;
+  cLife.fill(0); dummy.scale.setScalar(0); dummy.updateMatrix();
+  for (let i = 0; i < CONFETTI_MAX; i++) confettiMesh.setMatrixAt(i, dummy.matrix);
+  confettiMesh.instanceMatrix.needsUpdate = true;
+  sLife.fill(0); sRocket.fill(0); sBurst.fill(null); sCol.fill(0);
+  for (let i = 0; i < SPARK_MAX; i++) sPos[i * 3 + 1] = -100;
+  sGeo.attributes.position.needsUpdate = true; sGeo.attributes.color.needsUpdate = true;
+  FX.confettiLive = 0; FX.sparksLive = 0;
 }
 
 function updateFX(dt) {

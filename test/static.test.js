@@ -64,7 +64,7 @@ test('visuals: shadows, tone mapping and environment lighting are enabled', () =
 });
 
 test('controller UI: guide text names every button, quit is available, no sphere over the controller', () => {
-  for (const word of ['TRIGGER', 'GRIP', 'Quit VR', 'Refill Balls', 'Reset Cans']) assert.ok(moduleSrc.includes(word), `missing "${word}"`);
+  for (const word of ['TRIGGER', 'GRIP', 'Quit VR', 'Refill Balls', 'Reset Game']) assert.ok(moduleSrc.includes(word), `missing "${word}"`);
   assert.match(moduleSrc, /session\.end\(\)/);
   assert.doesNotMatch(moduleSrc, /ctrl\.add\(new THREE\.Mesh\(new THREE\.SphereGeometry/);
 });
